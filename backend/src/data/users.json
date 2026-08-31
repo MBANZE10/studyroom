@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "fullName": "Prof. Jean Koffi",
+    "email": "teacher@studyroom.com",
+    "passwordHash": "$2a$10$O/lQWFzcxe7JlamE8.40ouopjyAGPu8r/gv.J5hZ1D8G9MDP1rdAy",
+    "role": "teacher",
+    "matricule": null,
+    "promotion": null,
+    "filiere": null,
+    "classe": null
+  },
+  {
+    "id": 2,
+    "fullName": "Admin Principal",
+    "email": "admin@studyroom.com",
+    "passwordHash": "$2a$10$vK1a/SLfZePQ.280ZDeyS.4XMOBKStvtaUUHkKqplneXtyD.XFHpS",
+    "role": "admin"
+  },
+  {
+    "id": 3,
+    "fullName": "Marie Etudiante",
+    "email": "marie.etudiante@example.com",
+    "passwordHash": "$2a$10$JKFEU5DS5jXDE6.2uy4TQe1ampyw/LE8u7G1vXE5hNII2.87AtPXa",
+    "role": "student",
+    "sexe": "F",
+    "matricule": "ETU-2025-001",
+    "promotion": null,
+    "filiere": "Informatique",
+    "classe": "L2-A",
+    "specialite": null
+  },
+  {
+    "id": 4,
+    "fullName": "mbanze  celia pemba",
+    "email": "pemba@gmail.com",
+    "passwordHash": "$2a$10$23twbgaduFNdI/kHAMAg0Oh7utE65unTRzwk7WBopBjb/VDHAEboi",
+    "role": "student",
+    "sexe": "F",
+    "matricule": "a142",
+    "promotion": null,
+    "filiere": "staticien",
+    "classe": "L2/A",
+    "specialite": null
+  }
+]
