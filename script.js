@@ -1,4 +1,19 @@
-const apiBase = 'http://localhost:3000';
+const apiBase = (() => {
+  const override = new URLSearchParams(window.location.search).get('api');
+  if (override) {
+    return override.replace(/\/$/, '');
+  }
+
+  if (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file://')) {
+    return window.location.origin;
+  }
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '::1') {
+    return 'http://localhost:3000';
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:3000`;
+})();
 
 const exams = [
   {

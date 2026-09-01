@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -12,6 +13,7 @@ const { authenticate, authorize } = require('./backend/src/middleware/authMiddle
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(__dirname));
 
 function serializeUser(user) {
   return {
@@ -79,12 +81,16 @@ function ensureDefaultAccounts() {
 
 ensureDefaultAccounts();
 
-app.get('/', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({
     message: 'StudyRoom API est en ligne.',
     status: 'ok',
     version: '1.0.0'
   });
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.post('/api/auth/register', (req, res) => {
@@ -288,6 +294,7 @@ app.post('/api/results', authenticate, authorize(['teacher', 'admin']), (req, re
   });
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`StudyRoom API running on http://localhost:${port}`);
+  console.log(`StudyRoom API accessible on your network at http://<your-computer-ip>:${port}`);
 });
