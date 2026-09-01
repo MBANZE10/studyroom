@@ -1,7 +1,7 @@
 [
   {
     "id": 1,
-    "fullName": "Prof. Jean Koffi",
+    "fullName": "MOISE GBEMA",
     "email": "teacher@studyroom.com",
     "passwordHash": "$2a$10$O/lQWFzcxe7JlamE8.40ouopjyAGPu8r/gv.J5hZ1D8G9MDP1rdAy",
     "role": "teacher",
@@ -41,6 +41,32 @@
     "promotion": null,
     "filiere": "staticien",
     "classe": "L2/A",
+    "specialite": null
+  },
+  {
+    "id": 5,
+    "fullName": "elvis mbanze mangando",
+    "email": "elvismbanze78@gmail.com",
+    "passwordHash": "$2a$10$/pJMyZUv9Sr.SQCW098FVeS0Ksl6/lbQtOz0hoK/SzAVfMMMMVWsC",
+    "role": "student",
+    "sexe": "M",
+    "matricule": "A12/24",
+    "promotion": null,
+    "filiere": "informatique",
+    "classe": "L2 A",
+    "specialite": null
+  },
+  {
+    "id": 6,
+    "fullName": "MBANZE MANGANDO ELVIS",
+    "email": "elvis@gmail.com",
+    "passwordHash": "$2a$10$WaHC2W2Q0ybRMcguUjRq7e9HgQelMpMrwlaXBtHbmK4aAJB2.kKNm",
+    "role": "student",
+    "sexe": "M",
+    "matricule": "A2784/24",
+    "promotion": null,
+    "filiere": "economie",
+    "classe": "L2",
     "specialite": null
   }
 ]

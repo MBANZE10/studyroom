@@ -37,7 +37,9 @@ const state = {
   examStartedAt: null,
   examDurationSeconds: 0,
   examTimerId: null,
-  examLocked: false
+  examLocked: false,
+  teacherAssignments: [],
+  teacherResults: []
 };
 
 const loginModal = document.getElementById('loginModal');
@@ -55,6 +57,7 @@ const closeLoginModal = document.getElementById('closeLoginModal');
 const closeRegisterModal = document.getElementById('closeRegisterModal');
 const closeAdminCreateModal = document.getElementById('closeAdminCreateModal');
 const showRegisterBtn = document.getElementById('showRegisterBtn');
+const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const userLabel = document.getElementById('userLabel');
 const homeView = document.getElementById('homeView');
@@ -73,7 +76,10 @@ const adminCreateUserForm = document.getElementById('adminCreateUserForm');
 const adminUsersList = document.getElementById('adminUsersList');
 const resultModal = document.getElementById('resultModal');
 const resultText = document.getElementById('resultText');
+const resultActions = document.getElementById('resultActions');
 const closeResultBtn = document.getElementById('closeResultBtn');
+const saveResultBtn = document.getElementById('saveResultBtn');
+const exportResultBtn = document.getElementById('exportResultBtn');
 const quizPanel = document.getElementById('quizPanel');
 const questionCard = document.getElementById('questionCard');
 const progressBar = document.getElementById('progressBar');
@@ -146,6 +152,37 @@ function showAdminCreateMessage(message, type) {
   }
 }
 
+async function handleForgotPassword() {
+  const email = document.getElementById('email').value.trim();
+
+  if (!email) {
+    showLoginMessage('Veuillez entrer votre adresse e-mail pour réinitialiser le mot de passe.', 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${apiBase}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      showLoginMessage(data.message || 'Impossible de réinitialiser le mot de passe.', 'error');
+      return;
+    }
+
+    showLoginMessage(`Un mot de passe temporaire a été envoyé à ${email}.`, 'success');
+    if (data.tempPassword) {
+      console.log('Mot de passe temporaire :', data.tempPassword);
+    }
+  } catch (error) {
+    showLoginMessage('Le serveur est indisponible pour la réinitialisation du mot de passe.', 'error');
+  }
+}
+
 function showOnly(viewName) {
   homeView.classList.toggle('hidden', viewName !== 'home');
   studentDashboard.classList.toggle('hidden', viewName !== 'student');
@@ -159,6 +196,7 @@ function setLoggedUser(user) {
   userLabel.textContent = user ? user.fullName : '';
   userLabel.classList.toggle('hidden', !user);
   logoutBtn.classList.toggle('hidden', !user);
+  syncResultActions();
 }
 
 async function handleRegister(event) {
@@ -255,10 +293,18 @@ function logout() {
   state.studentData = null;
   state.teacherData = null;
   state.adminUsers = [];
+  state.teacherResults = [];
   setLoggedUser(null);
   showOnly('home');
   closeLogin();
   closeRegister();
+}
+
+function syncResultActions() {
+  const isTeacherView = state.user && (state.user.role === 'teacher' || state.user.role === 'admin');
+  if (resultActions) {
+    resultActions.classList.toggle('hidden', !isTeacherView);
+  }
 }
 
 async function loadStudentDashboard() {
@@ -273,7 +319,7 @@ async function loadStudentDashboard() {
   studentTitle.textContent = `${user.fullName}`;
 
   document.getElementById('studentCourseCount').textContent = 0;
-  document.getElementById('studentTaskCount').textContent = 0;
+  document.getElementById('studentTaskCount').textContent = state.teacherAssignments.length;
   document.getElementById('studentNoteCount').textContent = 0;
 
   studentCourses.innerHTML = `
@@ -283,12 +329,23 @@ async function loadStudentDashboard() {
     </div>
   `;
 
-  studentAssignments.innerHTML = `
-    <div class="list-item">
-      <h4>Aucun travail publié</h4>
-      <p>Les devoirs et interrogations apparaîtront ici dès que l’enseignant les publiera.</p>
-    </div>
-  `;
+  if (!state.teacherAssignments.length) {
+    studentAssignments.innerHTML = `
+      <div class="list-item">
+        <h4>Aucun travail publié</h4>
+        <p>Les devoirs et interrogations apparaîtront ici dès que l’enseignant les publiera.</p>
+      </div>
+    `;
+  } else {
+    studentAssignments.innerHTML = state.teacherAssignments.map((item) => `
+      <div class="list-item">
+        <h4>${item.title}</h4>
+        <p>${item.subject} • ${item.type} • ${item.duration} min</p>
+        <p>Début : ${new Date(item.startAt).toLocaleString()} • Fin : ${new Date(item.endAt).toLocaleString()}</p>
+        <button type="button" class="secondary-button start-exam" data-title="${item.title}">Répondre</button>
+      </div>
+    `).join('');
+  }
 
   const examButtons = studentAssignments.querySelectorAll('.start-exam');
   examButtons.forEach((button) => {
@@ -305,7 +362,7 @@ async function loadStudentDashboard() {
   studentNotes.innerHTML = `
     <div class="list-item">
       <h4>Aucune note publiée</h4>
-      <p>Les notes seront affichées ici après correction par l’enseignant.</p>
+      <p>Les notes seront affichées ici après correction automatique.</p>
     </div>
   `;
 }
@@ -318,9 +375,23 @@ async function loadTeacherDashboard() {
   const data = await response.json();
   state.teacherData = data;
 
-  document.getElementById('teacherCourseCount').textContent = data.statistics.courses;
-  document.getElementById('teacherAssignmentCount').textContent = data.statistics.assignments;
-  document.getElementById('teacherPendingCount').textContent = data.statistics.pendingReviews;
+  let submittedResults = [];
+  try {
+    const resultsResponse = await fetch(`${apiBase}/api/results`, {
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    const resultsData = await resultsResponse.json();
+    submittedResults = Array.isArray(resultsData.results) ? resultsData.results : [];
+    state.teacherResults = submittedResults;
+  } catch (error) {
+    state.teacherResults = [];
+  }
+
+  const uniqueStudents = new Set(submittedResults.filter((result) => result.email).map((result) => result.email.toLowerCase()));
+
+  document.getElementById('teacherCourseCount').textContent = 0;
+  document.getElementById('teacherAssignmentCount').textContent = state.teacherAssignments.length;
+  document.getElementById('teacherPendingCount').textContent = uniqueStudents.size;
 
   const allStudents = state.adminUsers.length ? state.adminUsers.filter((u) => u.role === 'student') : [];
   const teacherStudents = document.getElementById('teacherStudents');
@@ -332,27 +403,41 @@ async function loadTeacherDashboard() {
     </div>
   `).join('') : '<div class="list-item"><p>Aucun étudiant enregistré pour le moment.</p></div>';
 
-  teacherAssignments.innerHTML = `
-    <div class="list-item">
-      <h4>Programmation Web</h4>
-      <p>Devoir • date limite : 2026-09-12</p>
-    </div>
-    <div class="list-item">
-      <h4>Base de données</h4>
-      <p>Interrogation • date limite : 2026-09-15</p>
-    </div>
-  `;
+  if (!state.teacherAssignments.length) {
+    teacherAssignments.innerHTML = `
+      <div class="list-item">
+        <h4>Aucun travail publié</h4>
+        <p>Les publications de l’enseignant apparaîtront ici après validation.</p>
+      </div>
+    `;
+  } else {
+    teacherAssignments.innerHTML = state.teacherAssignments.map((item) => `
+      <div class="list-item">
+        <h4>${item.title}</h4>
+        <p>${item.subject} • ${item.type}</p>
+        <p>${Array.isArray(item.questions) ? item.questions.length : 0} question(s) • corrigé intégré</p>
+        <p>Début : ${new Date(item.startAt).toLocaleString()} • Fin : ${new Date(item.endAt).toLocaleString()}</p>
+        <p>Durée : ${item.duration} min</p>
+      </div>
+    `).join('');
+  }
 
-  teacherSubmissions.innerHTML = `
-    <div class="list-item">
-      <h4>Alice Mvila</h4>
-      <p>Interrogation JavaScript • en attente</p>
-    </div>
-    <div class="list-item">
-      <h4>Jules N'Guessan</h4>
-      <p>Devoir HTML/CSS • à corriger</p>
-    </div>
-  `;
+  if (!submittedResults.length) {
+    teacherSubmissions.innerHTML = `
+      <div class="list-item">
+        <h4>Aucune soumission</h4>
+        <p>Les réponses des étudiants s’afficheront ici après publication d’un travail.</p>
+      </div>
+    `;
+  } else {
+    teacherSubmissions.innerHTML = submittedResults.map((result) => `
+      <div class="list-item">
+        <h4>${result.fullName}</h4>
+        <p>${result.email} • ${result.examTitle}</p>
+        <p>Note : ${result.score}/${result.maxScore} • ${result.percentage}% • ${result.status}</p>
+      </div>
+    `).join('');
+  }
 }
 
 async function loadAdminDashboard() {
@@ -463,26 +548,115 @@ function handleQuizExit() {
   }
 }
 
+function normalizeText(value = '') {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function evaluateQuestionByRules(question, studentAnswer) {
+  const points = Number(question.points) || 1;
+  const answerText = normalizeText(studentAnswer ?? '');
+  const correctText = normalizeText(question.correctAnswer || '');
+
+  if (question.type === 'qcm' || question.type === 'vrai_faux') {
+    const isCorrect = answerText === correctText || normalizeText(question.options[Number(studentAnswer)] || '') === correctText;
+    return {
+      points: isCorrect ? points : 0,
+      isCorrect,
+      elvis: isCorrect ? points : 0,
+      robert: isCorrect ? points : 0,
+      maxPoints: points
+    };
+  }
+
+  if (question.type === 'ouverte') {
+    const rawExpected = question.expectedAnswer || question.correctAnswer || '';
+    const keywordList = normalizeText(rawExpected)
+      .split(' ')
+      .filter((token) => token.length > 2 && !['et', 'les', 'des', 'une', 'pour', 'dans', 'avec', 'sans', 'sur', 'sont', 'que', 'qui'].includes(token));
+
+    const uniqueKeywords = [...new Set(keywordList)];
+    const expectedCount = uniqueKeywords.length || 1;
+
+    const exactMatch = answerText.includes(correctText) || correctText.includes(answerText) || answerText === correctText;
+    if (exactMatch) {
+      return {
+        points: points,
+        isCorrect: true,
+        elvis: points,
+        robert: points,
+        maxPoints: points
+      };
+    }
+
+    const foundKeywords = uniqueKeywords.filter((keyword) => answerText.includes(keyword)).length;
+    const ratio = foundKeywords / expectedCount;
+    const awarded = Math.max(0, Math.min(points, points * ratio));
+
+    return {
+      points: Number(awarded.toFixed(2)),
+      isCorrect: awarded >= points * 0.5,
+      elvis: Number((awarded * 0.6).toFixed(2)),
+      robert: Number((awarded * 0.4).toFixed(2)),
+      maxPoints: points
+    };
+  }
+
+  const isCorrect = answerText === correctText;
+  return {
+    points: isCorrect ? points : 0,
+    isCorrect,
+    elvis: isCorrect ? points : 0,
+    robert: isCorrect ? points : 0,
+    maxPoints: points
+  };
+}
+
 function startQuizFromTask(taskTitle) {
   if (getQuizLockState()) {
     showLoginMessage('Cette interrogation est verrouillée. Vous avez quitté l’application pendant l’épreuve, donc l’accès est refusé.', 'error');
     return;
   }
 
-  const exam = exams.find((item) => item.title.toLowerCase().includes(taskTitle.toLowerCase())) || exams[0];
-  const now = new Date();
-  const startAt = exam.startAt ? new Date(exam.startAt) : null;
-  const endAt = exam.endAt ? new Date(exam.endAt) : null;
+  const assignment = state.teacherAssignments.find((item) => item.title.toLowerCase().includes(taskTitle.toLowerCase()));
+  if (!assignment) {
+    showLoginMessage('Cette interrogation n’est plus disponible.', 'error');
+    return;
+  }
 
-  if (startAt && now < startAt) {
+  const now = new Date();
+  const startAt = new Date(assignment.startAt);
+  const endAt = new Date(assignment.endAt);
+
+  if (now < startAt) {
     showLoginMessage('L’interrogation n’est pas encore ouverte. L’enseignant doit déclencher le début de l’épreuve.', 'error');
     return;
   }
 
-  if (endAt && now > endAt) {
+  if (now > endAt) {
     showLoginMessage('L’heure de l’interrogation est terminée. Vous n’avez plus accès à cette épreuve.', 'error');
     return;
   }
+
+  const exam = {
+    title: assignment.title,
+    level: assignment.subject,
+    durationMinutes: Number(assignment.duration) || 30,
+    description: assignment.instructions,
+    questions: assignment.questions.map((question) => ({
+      ...question,
+      options: question.type === 'qcm' ? (question.options || []).filter((option) => option && option.trim()) : question.type === 'vrai_faux' ? ['Vrai', 'Faux'] : [],
+      correctAnswer: question.correctAnswer || '',
+      expectedAnswer: question.expectedAnswer || '',
+      points: Number(question.points) || 1,
+      type: question.type || 'qcm'
+    }))
+  };
 
   state.currentExam = exam;
   state.currentQuestionIndex = 0;
@@ -533,17 +707,45 @@ function renderQuestion() {
   prevBtn.disabled = state.currentQuestionIndex === 0;
   nextBtn.textContent = state.currentQuestionIndex === exam.questions.length - 1 ? 'Terminer' : 'Suivant';
 
+  const currentAnswer = state.answers[state.currentQuestionIndex] ?? '';
+  const isOpenQuestion = question.type === 'ouverte';
+  let answerMarkup = '';
+
+  if (isOpenQuestion) {
+    answerMarkup = `
+      <label>
+        Votre réponse
+        <textarea id="openAnswerBox" rows="6" placeholder="Répondez ici...">${typeof currentAnswer === 'string' ? currentAnswer : ''}</textarea>
+      </label>
+    `;
+  } else {
+    const options = question.options.length ? question.options : ['Vrai', 'Faux'];
+    answerMarkup = `
+      <div class="answer-list">
+        ${options.map((option, index) => `
+          <button type="button" class="answer-option ${String(currentAnswer) === String(index) ? 'selected' : ''}" data-option-index="${index}">
+            ${option}
+          </button>
+        `).join('')}
+      </div>
+    `;
+  }
+
   questionCard.innerHTML = `
     <p class="question-counter">Question ${state.currentQuestionIndex + 1} / ${exam.questions.length}</p>
-    <h3>${question.question}</h3>
-    <div class="answer-list">
-      ${question.options.map((option, index) => `
-        <button type="button" class="answer-option ${state.answers[state.currentQuestionIndex] === index ? 'selected' : ''}" data-option-index="${index}">
-          ${option}
-        </button>
-      `).join('')}
-    </div>
+    <h3>${question.text}</h3>
+    ${answerMarkup}
   `;
+
+  if (isOpenQuestion) {
+    const openField = document.getElementById('openAnswerBox');
+    if (openField) {
+      openField.addEventListener('input', (event) => {
+        state.answers[state.currentQuestionIndex] = event.target.value;
+      });
+    }
+    return;
+  }
 
   questionCard.querySelectorAll('.answer-option').forEach((button) => {
     button.addEventListener('click', () => {
@@ -571,17 +773,184 @@ function goToNextQuestion() {
   submitExam();
 }
 
+function buildCurrentExamResult(customMessage = '') {
+  const exam = state.currentExam;
+  if (!exam) {
+    return null;
+  }
+
+  const evaluations = exam.questions.map((question, index) => evaluateQuestionByRules(question, state.answers[index]));
+  const totalMax = evaluations.reduce((sum, item) => sum + (item.maxPoints || 0), 0);
+  const totalEarned = evaluations.reduce((sum, item) => sum + (Number(item.points) || 0), 0);
+  const average = totalMax > 0 ? (totalEarned / totalMax) * 100 : 0;
+  const finalPercent = Math.round(average);
+  const isSuccessful = finalPercent >= 50;
+
+  const elvisScore = evaluations.reduce((sum, item) => sum + (Number(item.elvis) || 0), 0);
+  const robertScore = evaluations.reduce((sum, item) => sum + (Number(item.robert) || 0), 0);
+  const statusText = customMessage || (isSuccessful
+    ? 'Réussi — la réponse correspond à la clé de correction de l’enseignant.'
+    : 'Échec — la réponse ne correspond pas à la clé de correction de l’enseignant.');
+
+  const result = {
+    fullName: state.user?.fullName || 'Étudiant',
+    email: state.user?.email || '',
+    matricule: state.user?.matricule || '',
+    promotion: state.user?.promotion || '',
+    filiere: state.user?.filiere || '',
+    classe: state.user?.classe || '',
+    examTitle: exam.title,
+    subject: exam.level,
+    score: totalEarned,
+    maxScore: totalMax,
+    percentage: finalPercent,
+    status: isSuccessful ? 'Réussi' : 'Échec',
+    elvisScore,
+    robertScore,
+    message: statusText,
+    date: new Date().toISOString(),
+    details: evaluations.map((item, index) => ({
+      question: exam.questions[index]?.text || `Question ${index + 1}`,
+      points: Number(item.points) || 0,
+      maxPoints: Number(item.maxPoints) || 0,
+      isCorrect: Boolean(item.isCorrect)
+    }))
+  };
+
+  resultText.textContent = `${statusText}\n\nCorrection automatique locale\nElvis Mbanze : ${elvisScore}/${totalMax} points\nRobert Gbema : ${robertScore}/${totalMax} points\nNote finale : ${totalEarned}/${totalMax} (${finalPercent}%)`;
+
+  return result;
+}
+
+async function saveCurrentExamResult() {
+  if (!state.currentExam) {
+    return;
+  }
+
+  if (!(state.user && (state.user.role === 'teacher' || state.user.role === 'admin'))) {
+    showLoginMessage('Seuls les enseignants peuvent enregistrer les résultats.', 'error');
+    return;
+  }
+
+  const result = buildCurrentExamResult();
+  if (!result) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${apiBase}/api/results`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${state.token}`
+      },
+      body: JSON.stringify(result)
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      showLoginMessage(data.message || 'Impossible d’enregistrer le résultat.', 'error');
+      return;
+    }
+
+    showLoginMessage('Résultat enregistré dans la base locale et prêt pour export Excel.', 'success');
+    window.setTimeout(() => showLoginMessage('', ''), 1800);
+  } catch (error) {
+    showLoginMessage('Le serveur est indisponible pour l’enregistrement du résultat.', 'error');
+  }
+}
+
+async function exportCurrentExamResultToExcel() {
+  if (!(state.user && (state.user.role === 'teacher' || state.user.role === 'admin'))) {
+    showLoginMessage('Seuls les enseignants peuvent exporter les résultats.', 'error');
+    return;
+  }
+
+  const current = state.currentExam ? buildCurrentExamResult() : null;
+  let rows = [];
+
+  try {
+    const response = await fetch(`${apiBase}/api/results`, {
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const sortedResults = (data.results || []).sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+      if (sortedResults.length) {
+        rows = sortedResults.map((item) => [
+          item.fullName || '',
+          item.email || '',
+          item.matricule || '',
+          item.promotion || '',
+          item.filiere || '',
+          item.classe || '',
+          item.examTitle || '',
+          item.subject || '',
+          Number(item.score) || 0,
+          Number(item.maxScore) || 0,
+          Number(item.percentage) || 0,
+          item.status || '',
+          new Date(item.date || Date.now()).toLocaleString(),
+          Number(item.details && item.details.elvisScore) || 0,
+          Number(item.details && item.details.robertScore) || 0
+        ]);
+      }
+    }
+  } catch (error) {
+    // Si le serveur ne répond pas, on exporte le résultat en cours.
+  }
+
+  if (!rows.length && current) {
+    rows = [[
+      current.fullName,
+      current.email,
+      current.matricule,
+      current.promotion,
+      current.filiere,
+      current.classe,
+      current.examTitle,
+      current.subject,
+      current.score,
+      current.maxScore,
+      current.percentage,
+      current.status,
+      new Date(current.date).toLocaleString(),
+      current.elvisScore,
+      current.robertScore
+    ]];
+  }
+
+  if (!rows.length) {
+    showLoginMessage('Aucun résultat enregistré pour l’export Excel.', 'error');
+    return;
+  }
+
+  const header = ['Nom', 'Email', 'Matricule', 'Promotion', 'Filière', 'Classe', 'Examen', 'Matière', 'Score', 'Total', 'Pourcentage', 'Statut', 'Date', 'Elvis', 'Robert'];
+  const csvRows = [header, ...rows];
+  const csvContent = csvRows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+  const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `studyroom-resultats-${Date.now()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  showLoginMessage('Fichier Excel exporté en ordre alphabétique par nom.', 'success');
+  window.setTimeout(() => showLoginMessage('', ''), 1800);
+}
+
 function submitExam(customMessage = '') {
   const exam = state.currentExam;
   if (!exam) {
     return;
   }
 
-  const total = exam.questions.length;
-  const score = exam.questions.reduce((count, question, index) => count + (state.answers[index] === question.correctIndex ? 1 : 0), 0);
-  const percentage = Math.round((score / total) * 100);
-
-  resultText.textContent = customMessage || `Vous avez ${score} bonne(s) réponse(s) sur ${total}. Votre score est de ${percentage}%.`;
+  buildCurrentExamResult(customMessage);
   unlockQuizSession();
   quizPanel.classList.add('hidden');
   resultModal.style.display = 'flex';
@@ -609,6 +978,179 @@ function goBackToDashboard() {
   }
 }
 
+function createEmptyQuestionCard() {
+  return {
+    id: Date.now() + Math.random(),
+    type: 'qcm',
+    text: '',
+    options: ['', '', '', ''],
+    correctAnswer: '',
+    points: 2,
+    expectedAnswer: ''
+  };
+}
+
+function renderQuestionBuilder() {
+  const container = document.getElementById('teacherQuestionsContainer');
+  if (!container) return;
+
+  container.innerHTML = state.teacherAssignments.length ? '' : '';
+
+  const draftQuestions = window.teacherDraftQuestions || [];
+
+  if (!draftQuestions.length) {
+    draftQuestions.push(createEmptyQuestionCard());
+  }
+
+  window.teacherDraftQuestions = draftQuestions;
+
+  container.innerHTML = draftQuestions.map((question, questionIndex) => {
+    const isOpen = question.type === 'ouverte';
+    const isTrueFalse = question.type === 'vrai_faux';
+
+    return `
+      <div class="teacher-question-card" data-question-index="${questionIndex}">
+        <div class="teacher-question-card-header">
+          <h4>Question ${questionIndex + 1}</h4>
+          <button type="button" class="ghost-button remove-question-btn" data-index="${questionIndex}">Supprimer</button>
+        </div>
+
+        <label>
+          Type de question
+          <select class="question-type-select" data-index="${questionIndex}">
+            <option value="qcm" ${question.type === 'qcm' ? 'selected' : ''}>Choix multiple</option>
+            <option value="vrai_faux" ${question.type === 'vrai_faux' ? 'selected' : ''}>Vrai / Faux</option>
+            <option value="ouverte" ${question.type === 'ouverte' ? 'selected' : ''}>Réponse courte / ouverte</option>
+          </select>
+        </label>
+
+        <label>
+          Libellé de la question
+          <textarea class="question-text-input" data-index="${questionIndex}" rows="3" placeholder="Posez ici la question...">${question.text}</textarea>
+        </label>
+
+        ${!isOpen ? `
+          <div class="question-option-list">
+            ${question.options.map((option, optionIndex) => `
+              <div class="question-option-row">
+                <span class="inline-label">${String.fromCharCode(65 + optionIndex)}</span>
+                <input type="text" class="question-option-input" data-question-index="${questionIndex}" data-option-index="${optionIndex}" value="${option}" placeholder="Option ${String.fromCharCode(65 + optionIndex)}">
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        ${isTrueFalse ? `
+          <div class="question-option-list">
+            <div class="question-option-row">
+              <span class="inline-label">V</span>
+              <input type="text" value="Vrai" readonly>
+            </div>
+            <div class="question-option-row">
+              <span class="inline-label">F</span>
+              <input type="text" value="Faux" readonly>
+            </div>
+          </div>
+        ` : ''}
+
+        <label>
+          Bonne réponse
+          <input type="text" class="question-answer-input" data-index="${questionIndex}" value="${question.correctAnswer}" placeholder="HTML / Vrai / réponse attendue...">
+        </label>
+
+        <label>
+          Barème (points)
+          <input type="number" min="1" max="20" class="question-points-input" data-index="${questionIndex}" value="${question.points}">
+        </label>
+
+        ${isOpen ? `
+          <label>
+            Éléments attendus / réponse de référence
+            <textarea class="question-expected-input" data-index="${questionIndex}" rows="4" placeholder="- notion 1\n- notion 2\n- élément attendu...">${question.expectedAnswer}</textarea>
+          </label>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  const typeInputs = container.querySelectorAll('.question-type-select');
+  typeInputs.forEach((input) => {
+    input.addEventListener('change', (event) => {
+      const index = Number(event.target.dataset.index);
+      const draft = window.teacherDraftQuestions[index];
+      draft.type = event.target.value;
+      if (draft.type === 'qcm' && draft.options.length < 4) {
+        draft.options = ['', '', '', ''];
+      }
+      if (draft.type === 'vrai_faux') {
+        draft.options = ['Vrai', 'Faux'];
+      }
+      if (draft.type === 'ouverte') {
+        draft.options = ['', '', '', ''];
+      }
+      renderQuestionBuilder();
+    });
+  });
+
+  container.querySelectorAll('.question-text-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      window.teacherDraftQuestions[index].text = event.target.value;
+    });
+  });
+
+  container.querySelectorAll('.question-option-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const questionIndex = Number(event.target.dataset.questionIndex);
+      const optionIndex = Number(event.target.dataset.optionIndex);
+      const draft = window.teacherDraftQuestions[questionIndex];
+      draft.options[optionIndex] = event.target.value;
+    });
+  });
+
+  container.querySelectorAll('.question-answer-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      window.teacherDraftQuestions[index].correctAnswer = event.target.value;
+    });
+  });
+
+  container.querySelectorAll('.question-points-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      window.teacherDraftQuestions[index].points = Number(event.target.value) || 1;
+    });
+  });
+
+  container.querySelectorAll('.question-expected-input').forEach((input) => {
+    input.addEventListener('input', (event) => {
+      const index = Number(event.target.dataset.index);
+      window.teacherDraftQuestions[index].expectedAnswer = event.target.value;
+    });
+  });
+
+  container.querySelectorAll('.remove-question-btn').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const index = Number(event.target.dataset.index);
+      const draft = window.teacherDraftQuestions || [];
+      draft.splice(index, 1);
+      if (!draft.length) {
+        draft.push(createEmptyQuestionCard());
+      }
+      window.teacherDraftQuestions = draft;
+      renderQuestionBuilder();
+    });
+  });
+}
+
+function addQuestionBuilder() {
+  if (!window.teacherDraftQuestions) {
+    window.teacherDraftQuestions = [];
+  }
+  window.teacherDraftQuestions.push(createEmptyQuestionCard());
+  renderQuestionBuilder();
+}
+
 function handleTeacherAssignment(event) {
   event.preventDefault();
 
@@ -619,9 +1161,21 @@ function handleTeacherAssignment(event) {
   const endAtValue = document.getElementById('assignmentEndAt').value;
   const duration = document.getElementById('assignmentDuration').value || '30';
   const instructions = document.getElementById('assignmentInstructions').value.trim();
+  const consent = document.getElementById('teacherAssignmentConsent').checked;
+  const questions = window.teacherDraftQuestions || [];
 
   if (!title || !subject || !startAtValue || !endAtValue || !instructions) {
-    showLoginMessage('Veuillez remplir la date de début, la date de fin et les instructions.', 'error');
+    showLoginMessage('Veuillez remplir le titre, la matière, les dates et les instructions.', 'error');
+    return;
+  }
+
+  if (!questions.length || questions.some((question) => !question.text.trim())) {
+    showLoginMessage('Chaque question doit contenir un libellé avant publication.', 'error');
+    return;
+  }
+
+  if (!consent) {
+    showLoginMessage('Le consentement de l’enseignant est requis avant toute publication.', 'error');
     return;
   }
 
@@ -633,18 +1187,45 @@ function handleTeacherAssignment(event) {
     return;
   }
 
+  const normalizedQuestions = questions.map((question) => ({
+    id: question.id,
+    type: question.type,
+    text: question.text.trim(),
+    options: Array.isArray(question.options) ? question.options.map((opt) => opt.trim()) : [],
+    correctAnswer: String(question.correctAnswer || '').trim(),
+    points: Number(question.points) || 1,
+    expectedAnswer: String(question.expectedAnswer || '').trim()
+  }));
+
+  const assignment = {
+    title,
+    subject,
+    type,
+    startAt: startAtValue,
+    endAt: endAtValue,
+    duration,
+    instructions,
+    questions: normalizedQuestions,
+    publishedAt: new Date().toISOString()
+  };
+
+  state.teacherAssignments.unshift(assignment);
+
   const item = document.createElement('div');
   item.className = 'list-item';
   item.innerHTML = `
     <h4>${title}</h4>
-    <p>${subject} • ${type} • ${duration} min • début : ${startAt.toLocaleString()} • fin : ${endAt.toLocaleString()}</p>
-    <p>${instructions}</p>
+    <p>${subject} • ${type} • ${duration} min</p>
+    <p>${normalizedQuestions.length} question(s) • corrigé intégré</p>
+    <p>Début : ${startAt.toLocaleString()} • Fin : ${endAt.toLocaleString()}</p>
   `;
 
   teacherAssignments.prepend(item);
   teacherAssignmentForm.reset();
-  showLoginMessage('Interrogation publiée avec succès pour les étudiants.', 'success');
-  window.setTimeout(() => showLoginMessage('', ''), 1200);
+  window.teacherDraftQuestions = [createEmptyQuestionCard()];
+  renderQuestionBuilder();
+  showLoginMessage('Interrogation publiée. Les réponses seront corrigées automatiquement après soumission.', 'success');
+  window.setTimeout(() => showLoginMessage('', ''), 1500);
 }
 
 window.addEventListener('beforeunload', () => {
@@ -657,22 +1238,28 @@ window.addEventListener('visibilitychange', () => {
   }
 });
 
+document.getElementById('addQuestionBtn').addEventListener('click', addQuestionBuilder);
 openLoginBtn.addEventListener('click', openLogin);
 accessBtn.addEventListener('click', openLogin);
 closeLoginModal.addEventListener('click', closeLogin);
 closeRegisterModal.addEventListener('click', closeRegister);
 closeAdminCreateModal.addEventListener('click', closeAdminCreateModalWindow);
 showRegisterBtn.addEventListener('click', openRegister);
+forgotPasswordBtn.addEventListener('click', handleForgotPassword);
 openAdminCreateModalBtn.addEventListener('click', openAdminCreateModal);
 logoutBtn.addEventListener('click', logout);
 loginForm.addEventListener('submit', handleLogin);
 registerForm.addEventListener('submit', handleRegister);
 closeResultBtn.addEventListener('click', goBackToDashboard);
+saveResultBtn.addEventListener('click', saveCurrentExamResult);
+exportResultBtn.addEventListener('click', exportCurrentExamResultToExcel);
 leaveQuizBtn.addEventListener('click', goBackToDashboard);
 prevBtn.addEventListener('click', goToPreviousQuestion);
 nextBtn.addEventListener('click', goToNextQuestion);
 teacherAssignmentForm.addEventListener('submit', handleTeacherAssignment);
 adminCreateUserForm.addEventListener('submit', handleAdminCreateUser);
 
+window.teacherDraftQuestions = [createEmptyQuestionCard()];
+renderQuestionBuilder();
 showOnly('home');
 setLoggedUser(null);

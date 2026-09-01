@@ -15,6 +15,17 @@ function createToken(user) {
   );
 }
 
+function generateTemporaryPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  let pass = '';
+
+  for (let index = 0; index < 12; index += 1) {
+    pass += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+
+  return pass;
+}
+
 function verifyPassword(password, hash) {
   return bcrypt.compareSync(password, hash);
 }
@@ -29,6 +40,7 @@ function verifyToken(token) {
 
 module.exports = {
   createToken,
+  generateTemporaryPassword,
   verifyPassword,
   verifyToken
 };

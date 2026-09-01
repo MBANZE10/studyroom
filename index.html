@@ -22,7 +22,7 @@
     <section id="homeView" class="home-view">
       <section class="hero">
         <div class="hero-content">
-          <p class="subtitle">PLATEFORME ACADÉMIQUE</p>
+          <p class="subtitle">PLATEFORME ESTUDIANTINE</p>
           <h1>Votre espace pour <span>apprendre et réussir.</span></h1>
           <p class="description">
             StudyRoom permet aux étudiants et enseignants de gérer cours, devoirs, interrogations,
@@ -150,7 +150,7 @@
 
           <form id="teacherAssignmentForm" class="teacher-form">
             <label>
-              Titre
+              Titre de l’interrogation
               <input type="text" id="assignmentTitle" required>
             </label>
 
@@ -178,16 +178,28 @@
             </label>
 
             <label>
-              Durée de l’interrogation (minutes)
+              Durée de l’évaluation (minutes)
               <input type="number" id="assignmentDuration" min="10" max="120" value="30">
             </label>
 
             <label>
-              Instructions
+              Instructions générales
               <textarea id="assignmentInstructions" rows="4" required></textarea>
             </label>
 
-            <button type="submit" class="main-button small-button">Publier le travail</button>
+            <div class="builder-toolbar">
+              <span>Questions de l’évaluation</span>
+              <button type="button" id="addQuestionBtn" class="secondary-button">Ajouter une question</button>
+            </div>
+
+            <div id="teacherQuestionsContainer" class="question-builder-list"></div>
+
+            <label class="checkbox-row">
+              <input type="checkbox" id="teacherAssignmentConsent">
+              <span>Je confirme que je publie ce travail avec son corrigé et que je suis seul responsable des bonnes réponses.</span>
+            </label>
+
+            <button type="submit" class="main-button small-button">Publier l’interrogation</button>
           </form>
         </div>
 
@@ -297,6 +309,7 @@
         <label for="password">Mot de passe</label>
         <input type="password" id="password" placeholder="Votre mot de passe" required>
 
+        <button type="button" id="forgotPasswordBtn" class="ghost-button register-link">Mot de passe oublié ?</button>
         <button type="submit" class="main-button">Se connecter</button>
         <button type="button" id="showRegisterBtn" class="ghost-button register-link">Créer un compte</button>
       </form>
@@ -416,7 +429,11 @@
     <div class="result-box">
       <h3>Résultat de l'examen</h3>
       <p id="resultText">Votre score apparaîtra ici.</p>
-      <button id="closeResultBtn" class="main-button" type="button">Fermer</button>
+      <div id="resultActions" class="quiz-actions result-actions hidden">
+        <button id="saveResultBtn" class="secondary-button" type="button">Enregistrer dans la base</button>
+        <button id="exportResultBtn" class="main-button" type="button">Exporter en Excel</button>
+      </div>
+      <button id="closeResultBtn" class="ghost-button" type="button">Fermer</button>
     </div>
   </div>
 

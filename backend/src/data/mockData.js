@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const users = [
   {
     id: 1,
-    fullName: 'Prof. Jean Koffi',
+    fullName: 'Enseignant',
     email: 'teacher@studyroom.com',
     passwordHash: bcrypt.hashSync('teacher123', 10),
     role: 'teacher',
@@ -22,9 +22,9 @@ const users = [
 ];
 
 const courses = [
-  { id: 1, title: 'Programmation Web', teacher: 'Prof. Jean Koffi', students: 42 },
-  { id: 2, title: 'Bases de données', teacher: 'Prof. Jean Koffi', students: 38 },
-  { id: 3, title: 'Réseaux', teacher: 'Prof. Jean Koffi', students: 31 }
+  { id: 1, title: 'Programmation Web', teacher: 'Enseignant', students: 42 },
+  { id: 2, title: 'Bases de données', teacher: 'Enseignant', students: 38 },
+  { id: 3, title: 'Réseaux', teacher: 'Enseignant', students: 31 }
 ];
 
 const assignments = [

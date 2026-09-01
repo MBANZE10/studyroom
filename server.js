@@ -6,8 +6,8 @@ const bcrypt = require('bcryptjs');
 const app = express();
 const port = process.env.PORT || 3000;
 
-const { users, saveUsers } = require('./backend/src/config/db');
-const { createToken, verifyPassword } = require('./backend/src/utils/auth');
+const { users, saveUsers, results, saveResults, sortResultsByStudentName } = require('./backend/src/config/db');
+const { createToken, verifyPassword, generateTemporaryPassword } = require('./backend/src/utils/auth');
 const { authenticate, authorize } = require('./backend/src/middleware/authMiddleware');
 
 app.use(cors());
@@ -50,6 +50,34 @@ function createUserRecord(payload) {
   saveUsers();
   return newUser;
 }
+
+function ensureDefaultAccounts() {
+  const defaultAccounts = [
+    { fullName: 'MOISE GBEMA', email: 'teacher@studyroom.com', password: 'teacher123', role: 'teacher' },
+    { fullName: 'Admin Principal', email: 'admin@studyroom.com', password: 'admin123', role: 'admin' }
+  ];
+
+  for (const account of defaultAccounts) {
+    const existing = users.find((user) => user.email.toLowerCase() === account.email.toLowerCase());
+
+    if (!existing) {
+      createUserRecord(account);
+      continue;
+    }
+
+    const needsRoleUpdate = existing.role !== account.role;
+    const needsPasswordReset = !verifyPassword(account.password, existing.passwordHash);
+
+    if (needsRoleUpdate || needsPasswordReset) {
+      existing.fullName = account.fullName;
+      existing.role = account.role;
+      existing.passwordHash = bcrypt.hashSync(account.password, 10);
+      saveUsers();
+    }
+  }
+}
+
+ensureDefaultAccounts();
 
 app.get('/', (req, res) => {
   res.json({
@@ -113,6 +141,33 @@ app.post('/api/auth/login', (req, res) => {
     message: 'Connexion réussie.',
     token,
     user: serializeUser(user)
+  });
+});
+
+app.post('/api/auth/forgot-password', (req, res) => {
+  const { email } = req.body;
+
+  if (!email || !String(email).trim()) {
+    return res.status(400).json({ message: 'Veuillez saisir votre adresse e-mail.' });
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const user = users.find((item) => item.email.toLowerCase() === normalizedEmail);
+
+  if (!user) {
+    return res.status(404).json({ message: 'Aucun compte ne correspond à cette adresse e-mail.' });
+  }
+
+  const tempPassword = generateTemporaryPassword();
+  user.passwordHash = bcrypt.hashSync(tempPassword, 10);
+  saveUsers();
+
+  const emailMessage = `Bonjour ${user.fullName},\n\nVotre mot de passe temporaire est : ${tempPassword}\n\nVeuillez le changer dès votre prochaine connexion pour sécuriser votre compte.\n\nStudyRoom`;
+
+  return res.status(200).json({
+    message: 'Un mot de passe temporaire a été envoyé à votre adresse e-mail.',
+    tempPassword,
+    emailPreview: emailMessage
   });
 });
 
@@ -188,6 +243,48 @@ app.post('/api/admin/users', authenticate, authorize(['admin']), (req, res) => {
   return res.status(201).json({
     message: 'Utilisateur créé par l’administrateur.',
     user: serializeUser(newUser)
+  });
+});
+
+app.get('/api/results', authenticate, authorize(['teacher', 'admin']), (req, res) => {
+  res.json({
+    results: sortResultsByStudentName(results)
+  });
+});
+
+app.post('/api/results', authenticate, authorize(['teacher', 'admin']), (req, res) => {
+  const record = req.body || {};
+  const required = ['fullName', 'email', 'examTitle', 'score', 'maxScore', 'percentage', 'status'];
+
+  if (required.some((field) => !record[field] && record[field] !== 0)) {
+    return res.status(400).json({ message: 'Les informations de résultat sont incomplètes.' });
+  }
+
+  const newRecord = {
+    id: results.length ? Math.max(...results.map((item) => Number(item.id) || 0)) + 1 : 1,
+    fullName: String(record.fullName).trim(),
+    email: String(record.email).trim(),
+    matricule: record.matricule || '',
+    promotion: record.promotion || '',
+    filiere: record.filiere || '',
+    classe: record.classe || '',
+    examTitle: String(record.examTitle).trim(),
+    subject: String(record.subject || '').trim(),
+    score: Number(record.score) || 0,
+    maxScore: Number(record.maxScore) || 0,
+    percentage: Number(record.percentage) || 0,
+    status: String(record.status || 'Échec').trim(),
+    date: record.date || new Date().toISOString(),
+    details: Array.isArray(record.details) ? record.details : []
+  };
+
+  results.push(newRecord);
+  saveResults();
+
+  return res.status(201).json({
+    message: 'Résultat enregistré dans la base locale.',
+    result: newRecord,
+    results: sortResultsByStudentName(results)
   });
 });
 
