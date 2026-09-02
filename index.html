@@ -282,6 +282,31 @@
           </div>
           <div id="adminUsersList" class="list-stack"></div>
         </div>
+
+        <div class="panel admin-students-panel">
+          <div class="panel-header panel-header-inline">
+            <h3>Utilisateurs / Liste des étudiants</h3>
+            <strong id="adminStudentTotal">0 étudiant</strong>
+          </div>
+          <label for="adminStudentSearch">Rechercher un étudiant</label>
+          <input type="search" id="adminStudentSearch" placeholder="Nom complet, matricule ou e-mail">
+          <div class="table-scroll">
+            <table class="admin-students-table">
+              <thead>
+                <tr>
+                  <th>Nom complet</th>
+                  <th>Matricule</th>
+                  <th>Sexe</th>
+                  <th>Faculté</th>
+                  <th>Promotion</th>
+                  <th>E-mail</th>
+                  <th>Création du compte</th>
+                </tr>
+              </thead>
+              <tbody id="adminStudentsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
 

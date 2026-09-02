@@ -39,6 +39,7 @@ const state = {
   studentData: null,
   teacherData: null,
   adminUsers: [],
+  adminStudents: [],
   examStartedAt: null,
   examDurationSeconds: 0,
   examTimerId: null,
@@ -85,6 +86,9 @@ const exportTeacherResultsBtn = document.getElementById('exportTeacherResultsBtn
 const teacherAssignmentForm = document.getElementById('teacherAssignmentForm');
 const adminCreateUserForm = document.getElementById('adminCreateUserForm');
 const adminUsersList = document.getElementById('adminUsersList');
+const adminStudentSearch = document.getElementById('adminStudentSearch');
+const adminStudentsTableBody = document.getElementById('adminStudentsTableBody');
+const adminStudentTotal = document.getElementById('adminStudentTotal');
 const resultModal = document.getElementById('resultModal');
 const resultText = document.getElementById('resultText');
 const resultActions = document.getElementById('resultActions');
@@ -161,6 +165,15 @@ function showAdminCreateMessage(message, type) {
   if (type) {
     adminCreateMessage.classList.add(type);
   }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 async function handleForgotPassword() {
@@ -502,6 +515,34 @@ async function loadAdminDashboard() {
       <p>${user.role} • ${user.email}</p>
     </div>
   `).join('');
+
+  const studentsResponse = await fetch(`${apiBase}/api/admin/students`, {
+    headers: { Authorization: `Bearer ${state.token}` }
+  });
+  const studentsData = await studentsResponse.json();
+  state.adminStudents = Array.isArray(studentsData.students) ? studentsData.students : [];
+  adminStudentTotal.textContent = `${studentsData.total || 0} étudiant${studentsData.total === 1 ? '' : 's'}`;
+  renderAdminStudents();
+}
+
+function renderAdminStudents() {
+  const query = (adminStudentSearch.value || '').trim().toLowerCase();
+  const visibleStudents = state.adminStudents.filter((student) => [student.fullName, student.matricule, student.email]
+    .some((value) => String(value || '').toLowerCase().includes(query)));
+
+  adminStudentsTableBody.innerHTML = visibleStudents.length ? visibleStudents.map((student) => `
+    <tr>
+      <td>${escapeHtml(student.fullName)}</td>
+      <td>${escapeHtml(student.matricule || 'Non renseigné')}</td>
+      <td>${escapeHtml(student.sexe || 'Non renseigné')}</td>
+      <td>${escapeHtml(student.faculte || student.filiere || 'Non renseignée')}</td>
+      <td>${escapeHtml(student.promotion || 'Non renseignée')}</td>
+      <td>${escapeHtml(student.email)}</td>
+      <td>${escapeHtml(student.createdAt ? new Date(student.createdAt).toLocaleString('fr-FR') : 'Non disponible')}</td>
+    </tr>
+  `).join('') : `
+    <tr><td colspan="7">Aucun étudiant trouvé.</td></tr>
+  `;
 }
 
 async function handleAdminCreateUser(event) {
@@ -1381,6 +1422,7 @@ prevBtn.addEventListener('click', goToPreviousQuestion);
 nextBtn.addEventListener('click', goToNextQuestion);
 teacherAssignmentForm.addEventListener('submit', handleTeacherAssignment);
 adminCreateUserForm.addEventListener('submit', handleAdminCreateUser);
+adminStudentSearch.addEventListener('input', renderAdminStudents);
 viewTeacherResultsBtn.addEventListener('click', loadTeacherResults);
 exportTeacherResultsBtn.addEventListener('click', exportTeacherResults);
 

@@ -55,7 +55,8 @@ function serializeUser(user) {
     filiere: user.filiere || null,
     faculte: user.faculte || user.filiere || null,
     classe: user.classe || null,
-    specialite: user.specialite || null
+    specialite: user.specialite || null,
+    createdAt: user.createdAt || null
   };
 }
 
@@ -75,7 +76,8 @@ function createUserRecord(payload) {
     filiere: payload.filiere || null,
     faculte: payload.faculte || payload.filiere || null,
     classe: payload.classe || null,
-    specialite: payload.specialite || null
+    specialite: payload.specialite || null,
+    createdAt: new Date().toISOString()
   };
 
   users.push(newUser);
@@ -474,6 +476,17 @@ app.get('/api/teacher/dashboard', authenticate, authorize(['teacher']), (req, re
 app.get('/api/admin/users', authenticate, authorize(['admin']), (req, res) => {
   res.json({
     users: users.map(serializeUser)
+  });
+});
+
+app.get('/api/admin/students', authenticate, authorize(['admin']), (req, res) => {
+  const students = users
+    .filter((user) => user.role === 'student')
+    .map(serializeUser);
+
+  res.json({
+    total: students.length,
+    students
   });
 });
 
