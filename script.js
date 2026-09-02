@@ -1,19 +1,9 @@
-const apiBase = (() => {
-  const override = new URLSearchParams(window.location.search).get('api');
-  if (override) {
-    return override.replace(/\/$/, '');
-  }
+const configuredApiBase = window.STUDYROOM_CONFIG?.apiBaseUrl;
+const apiBase = typeof configuredApiBase === 'string' ? configuredApiBase.replace(/\/$/, '') : '';
 
-  if (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file://')) {
-    return window.location.origin;
-  }
-
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '::1') {
-    return 'http://localhost:3000';
-  }
-
-  return `${window.location.protocol}//${window.location.hostname}:3000`;
-})();
+if (!apiBase) {
+  throw new Error('StudyRoom: apiBaseUrl doit être configurée dans config.js.');
+}
 
 const exams = [
   {
@@ -220,13 +210,14 @@ async function handleRegister(event) {
   const fullName = document.getElementById('registerFullName').value.trim();
   const email = document.getElementById('registerEmail').value.trim();
   const password = document.getElementById('registerPassword').value.trim();
+  const role = document.getElementById('registerRole').value || 'student';
   const sexe = document.getElementById('registerGender').value;
   const matricule = document.getElementById('registerMatricule').value.trim();
   const filiere = document.getElementById('registerFiliere').value.trim();
   const classe = document.getElementById('registerClasse').value.trim();
 
   if (!fullName || !email || !password) {
-    showLoginMessage('Veuillez remplir tous les champs pour créer votre compte.', 'error');
+    showRegisterMessage('Veuillez remplir tous les champs pour créer votre compte.', 'error');
     return;
   }
 
@@ -234,7 +225,7 @@ async function handleRegister(event) {
     const response = await fetch(`${apiBase}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName, email, password, sexe, matricule, filiere, classe })
+      body: JSON.stringify({ fullName, email, password, role, sexe, matricule, filiere, classe })
     });
 
     const data = await response.json();

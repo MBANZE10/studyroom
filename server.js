@@ -5,13 +5,28 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = Number(process.env.PORT || 3000);
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:5500,http://localhost:5501,https://mbanze10.github.io')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
 
 const { users, saveUsers, results, saveResults, sortResultsByStudentName } = require('./backend/src/config/db');
 const { createToken, verifyPassword, generateTemporaryPassword } = require('./backend/src/utils/auth');
 const { authenticate, authorize } = require('./backend/src/middleware/authMiddleware');
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(null, false);
+  }
+}));
 app.use(express.json());
 app.use(express.static(__dirname));
 
@@ -94,8 +109,8 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/auth/register', (req, res) => {
-  const { fullName, email, password, sexe, matricule, promotion, filiere, classe, specialite } = req.body;
-  const role = 'student';
+  const { fullName, email, password, sexe, matricule, promotion, filiere, classe, specialite, role } = req.body;
+  const allowedPublicRole = ['student', 'teacher'].includes(role) ? role : 'student';
 
   if (!fullName || !email || !password) {
     return res.status(400).json({ message: 'Nom, email et mot de passe requis.' });
@@ -105,7 +120,7 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 4 caractères.' });
   }
 
-  if (users.some((item) => item.email.toLowerCase() === email.toLowerCase())) {
+  if (users.some((item) => item.email.toLowerCase() === String(email).trim().toLowerCase())) {
     return res.status(409).json({ message: 'Un compte avec cet email existe déjà.' });
   }
 
@@ -113,7 +128,7 @@ app.post('/api/auth/register', (req, res) => {
     fullName,
     email,
     password,
-    role,
+    role: allowedPublicRole,
     sexe,
     matricule,
     promotion,
@@ -294,7 +309,13 @@ app.post('/api/results', authenticate, authorize(['teacher', 'admin']), (req, re
   });
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`StudyRoom API running on http://localhost:${port}`);
-  console.log(`StudyRoom API accessible on your network at http://<your-computer-ip>:${port}`);
+const server = app.listen(port, '0.0.0.0', () => {
+  const actualPort = server.address().port;
+  console.log(`StudyRoom API running on http://localhost:${actualPort}`);
+  console.log(`StudyRoom API accessible on your network at http://<your-computer-ip>:${actualPort}`);
+});
+
+server.on('error', (error) => {
+  console.error('Erreur de démarrage du serveur:', error);
+  process.exit(1);
 });
