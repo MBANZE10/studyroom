@@ -42,6 +42,8 @@ const state = {
   examStartedAt: null,
   examDurationSeconds: 0,
   examTimerId: null,
+  examAttemptId: null,
+  examExpiresAt: null,
   examLocked: false,
   teacherAssignments: [],
   teacherResults: []
@@ -76,6 +78,10 @@ const studentSubmissions = document.getElementById('studentSubmissions');
 const studentNotes = document.getElementById('studentNotes');
 const teacherAssignments = document.getElementById('teacherAssignments');
 const teacherSubmissions = document.getElementById('teacherSubmissions');
+const teacherResultsAssignment = document.getElementById('teacherResultsAssignment');
+const teacherResultsList = document.getElementById('teacherResultsList');
+const viewTeacherResultsBtn = document.getElementById('viewTeacherResultsBtn');
+const exportTeacherResultsBtn = document.getElementById('exportTeacherResultsBtn');
 const teacherAssignmentForm = document.getElementById('teacherAssignmentForm');
 const adminCreateUserForm = document.getElementById('adminCreateUserForm');
 const adminUsersList = document.getElementById('adminUsersList');
@@ -210,13 +216,12 @@ async function handleRegister(event) {
   const fullName = document.getElementById('registerFullName').value.trim();
   const email = document.getElementById('registerEmail').value.trim();
   const password = document.getElementById('registerPassword').value.trim();
-  const role = document.getElementById('registerRole').value || 'student';
   const sexe = document.getElementById('registerGender').value;
   const matricule = document.getElementById('registerMatricule').value.trim();
-  const filiere = document.getElementById('registerFiliere').value.trim();
-  const classe = document.getElementById('registerClasse').value.trim();
+  const faculte = document.getElementById('registerFaculte').value.trim();
+  const promotion = document.getElementById('registerPromotion').value.trim();
 
-  if (!fullName || !email || !password) {
+  if (!fullName || !email || !password || !matricule || !faculte || !promotion) {
     showRegisterMessage('Veuillez remplir tous les champs pour créer votre compte.', 'error');
     return;
   }
@@ -225,7 +230,7 @@ async function handleRegister(event) {
     const response = await fetch(`${apiBase}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName, email, password, role, sexe, matricule, filiere, classe })
+      body: JSON.stringify({ fullName, email, password, sexe, matricule, faculte, promotion })
     });
 
     const data = await response.json();
@@ -320,6 +325,7 @@ async function loadStudentDashboard() {
 
   const data = await response.json();
   state.studentData = data;
+  state.teacherAssignments = Array.isArray(data.dashboard?.assignments) ? data.dashboard.assignments : [];
 
   const user = data.user;
   studentTitle.textContent = `${user.fullName}`;
@@ -371,6 +377,20 @@ async function loadStudentDashboard() {
       <p>Les notes seront affichées ici après correction automatique.</p>
     </div>
   `;
+
+  try {
+    const resultsResponse = await fetch(`${apiBase}/api/student/results`, {
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    const resultsData = await resultsResponse.json();
+    const studentResults = Array.isArray(resultsData.results) ? resultsData.results : [];
+    document.getElementById('studentNoteCount').textContent = studentResults.length;
+    studentNotes.innerHTML = studentResults.length ? studentResults.map((result) => `
+      <div class="list-item"><h4>${result.examTitle}</h4><p>${result.type} • ${result.score}/${result.maxScore} • ${result.percentage}%</p></div>
+    `).join('') : studentNotes.innerHTML;
+  } catch (error) {
+    // Le dashboard principal reste visible même si les résultats ne répondent pas.
+  }
 }
 
 async function loadTeacherDashboard() {
@@ -380,6 +400,13 @@ async function loadTeacherDashboard() {
 
   const data = await response.json();
   state.teacherData = data;
+
+  const assignmentsResponse = await fetch(`${apiBase}/api/assignments`, {
+    headers: { Authorization: `Bearer ${state.token}` }
+  });
+  const assignmentsData = await assignmentsResponse.json();
+  state.teacherAssignments = Array.isArray(assignmentsData.assignments) ? assignmentsData.assignments : [];
+  teacherResultsAssignment.innerHTML = '<option value="">Choisir une évaluation</option>' + state.teacherAssignments.map((item) => `<option value="${item.id}">${item.title} (${item.type})</option>`).join('');
 
   let submittedResults = [];
   try {
@@ -539,6 +566,8 @@ function unlockQuizSession() {
   }
   state.examStartedAt = null;
   state.examDurationSeconds = 0;
+  state.examAttemptId = null;
+  state.examExpiresAt = null;
   setQuizLockedState(false);
   sessionStorage.removeItem('studyroom_active_exam');
 }
@@ -623,7 +652,7 @@ function evaluateQuestionByRules(question, studentAnswer) {
   };
 }
 
-function startQuizFromTask(taskTitle) {
+async function startQuizFromTask(taskTitle) {
   if (getQuizLockState()) {
     showLoginMessage('Cette interrogation est verrouillée. Vous avez quitté l’application pendant l’épreuve, donc l’accès est refusé.', 'error');
     return;
@@ -635,30 +664,29 @@ function startQuizFromTask(taskTitle) {
     return;
   }
 
-  const now = new Date();
-  const startAt = new Date(assignment.startAt);
-  const endAt = new Date(assignment.endAt);
-
-  if (now < startAt) {
-    showLoginMessage('L’interrogation n’est pas encore ouverte. L’enseignant doit déclencher le début de l’épreuve.', 'error');
-    return;
-  }
-
-  if (now > endAt) {
-    showLoginMessage('L’heure de l’interrogation est terminée. Vous n’avez plus accès à cette épreuve.', 'error');
+  let data;
+  try {
+    const response = await fetch(`${apiBase}/api/assignments/${assignment.id}/start`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    data = await response.json();
+    if (!response.ok) {
+      showLoginMessage(data.message || 'Impossible de démarrer cette évaluation.', 'error');
+      return;
+    }
+  } catch (error) {
+    showLoginMessage('Le serveur est inaccessible pour démarrer l’évaluation.', 'error');
     return;
   }
 
   const exam = {
-    title: assignment.title,
-    level: assignment.subject,
-    durationMinutes: Number(assignment.duration) || 30,
-    description: assignment.instructions,
-    questions: assignment.questions.map((question) => ({
+    ...data.assignment,
+    level: data.assignment.subject,
+    durationMinutes: Number(data.assignment.duration) || 30,
+    questions: data.assignment.questions.map((question) => ({
       ...question,
-      options: question.type === 'qcm' ? (question.options || []).filter((option) => option && option.trim()) : question.type === 'vrai_faux' ? ['Vrai', 'Faux'] : [],
-      correctAnswer: question.correctAnswer || '',
-      expectedAnswer: question.expectedAnswer || '',
+      options: question.options || [],
       points: Number(question.points) || 1,
       type: question.type || 'qcm'
     }))
@@ -667,7 +695,9 @@ function startQuizFromTask(taskTitle) {
   state.currentExam = exam;
   state.currentQuestionIndex = 0;
   state.answers = Array(exam.questions.length).fill(null);
-  state.examStartedAt = Date.now();
+  state.examAttemptId = data.attempt.id;
+  state.examStartedAt = new Date(data.attempt.startedAt).getTime();
+  state.examExpiresAt = new Date(data.attempt.expiresAt).getTime();
   state.examDurationSeconds = (exam.durationMinutes || 30) * 60;
   state.examLocked = false;
   setQuizLockedState(false);
@@ -689,8 +719,7 @@ function startQuizTimer() {
       return;
     }
 
-    const elapsed = Math.floor((Date.now() - state.examStartedAt) / 1000);
-    const remaining = Math.max(state.examDurationSeconds - elapsed, 0);
+    const remaining = Math.max(Math.ceil((state.examExpiresAt - Date.now()) / 1000), 0);
     const minutes = String(Math.floor(remaining / 60)).padStart(2, '0');
     const seconds = String(remaining % 60).padStart(2, '0');
     quizTimer.textContent = `${minutes}:${seconds}`;
@@ -950,17 +979,80 @@ async function exportCurrentExamResultToExcel() {
   window.setTimeout(() => showLoginMessage('', ''), 1800);
 }
 
-function submitExam(customMessage = '') {
+async function submitExam(customMessage = '') {
   const exam = state.currentExam;
   if (!exam) {
     return;
   }
 
-  buildCurrentExamResult(customMessage);
+  const answers = exam.questions.map((question, index) => ({
+    questionId: question.id,
+    answer: state.answers[index] ?? ''
+  }));
+
+  try {
+    const response = await fetch(`${apiBase}/api/assignments/${exam.id}/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token}` },
+      body: JSON.stringify({ answers })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      showLoginMessage(data.message || 'La soumission a été refusée.', 'error');
+      return;
+    }
+    const result = data.result;
+    resultText.textContent = `${customMessage ? `${customMessage}\n\n` : ''}Résultat disponible\n\n${result.examTitle}\nNote : ${result.score}/${result.maxScore}\nPourcentage : ${result.percentage}%\nStatut : ${result.status}`;
+  } catch (error) {
+    showLoginMessage('Le serveur est indisponible pour la soumission.', 'error');
+    return;
+  }
+
   unlockQuizSession();
   quizPanel.classList.add('hidden');
   resultModal.style.display = 'flex';
   resultModal.setAttribute('aria-hidden', 'false');
+}
+
+async function loadTeacherResults() {
+  const assignmentId = Number(teacherResultsAssignment.value);
+  if (!assignmentId) {
+    showLoginMessage('Choisissez une évaluation.', 'error');
+    return;
+  }
+  const response = await fetch(`${apiBase}/api/teacher/assignments/${assignmentId}/results`, {
+    headers: { Authorization: `Bearer ${state.token}` }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    showLoginMessage(data.message || 'Impossible de récupérer les résultats.', 'error');
+    return;
+  }
+  teacherResultsList.innerHTML = data.results.length ? data.results.map((result) => `
+    <div class="list-item"><h4>${result.fullName}</h4><p>${result.matricule || 'Sans matricule'} • ${result.sexe || ''} • ${result.faculte || ''} • ${result.promotion || ''}</p><p>${result.email} • Cote : ${result.score}/${result.maxScore} (${result.percentage}%)</p></div>
+  `).join('') : '<div class="list-item"><p>Aucun résultat pour cette évaluation.</p></div>';
+}
+
+async function exportTeacherResults() {
+  const assignmentId = Number(teacherResultsAssignment.value);
+  if (!assignmentId) {
+    showLoginMessage('Choisissez une évaluation.', 'error');
+    return;
+  }
+  const response = await fetch(`${apiBase}/api/teacher/assignments/${assignmentId}/export.xlsx`, {
+    headers: { Authorization: `Bearer ${state.token}` }
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    showLoginMessage(data.message || 'Impossible de générer le fichier Excel.', 'error');
+    return;
+  }
+  const blob = await response.blob();
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `studyroom-resultats-${assignmentId}.xlsx`;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function goBackToDashboard() {
@@ -1041,8 +1133,10 @@ function renderQuestionBuilder() {
               <div class="question-option-row">
                 <span class="inline-label">${String.fromCharCode(65 + optionIndex)}</span>
                 <input type="text" class="question-option-input" data-question-index="${questionIndex}" data-option-index="${optionIndex}" value="${option}" placeholder="Option ${String.fromCharCode(65 + optionIndex)}">
+                ${question.type === 'qcm' ? `<button type="button" class="ghost-button remove-option-btn" data-question-index="${questionIndex}" data-option-index="${optionIndex}" ${question.options.length <= 2 ? 'disabled' : ''}>Supprimer</button>` : ''}
               </div>
             `).join('')}
+            ${question.type === 'qcm' ? `<button type="button" class="secondary-button add-option-btn" data-index="${questionIndex}" ${question.options.length >= 5 ? 'disabled' : ''}>Ajouter un choix</button>` : ''}
           </div>
         ` : ''}
 
@@ -1114,6 +1208,27 @@ function renderQuestionBuilder() {
     });
   });
 
+  container.querySelectorAll('.add-option-btn').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const question = window.teacherDraftQuestions[Number(event.target.dataset.index)];
+      if (question.options.length < 5) {
+        question.options.push('');
+        renderQuestionBuilder();
+      }
+    });
+  });
+
+  container.querySelectorAll('.remove-option-btn').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const question = window.teacherDraftQuestions[Number(event.target.dataset.questionIndex)];
+      const optionIndex = Number(event.target.dataset.optionIndex);
+      if (question.options.length > 2) {
+        question.options.splice(optionIndex, 1);
+        renderQuestionBuilder();
+      }
+    });
+  });
+
   container.querySelectorAll('.question-answer-input').forEach((input) => {
     input.addEventListener('input', (event) => {
       const index = Number(event.target.dataset.index);
@@ -1157,7 +1272,7 @@ function addQuestionBuilder() {
   renderQuestionBuilder();
 }
 
-function handleTeacherAssignment(event) {
+async function handleTeacherAssignment(event) {
   event.preventDefault();
 
   const title = document.getElementById('assignmentTitle').value.trim();
@@ -1170,7 +1285,7 @@ function handleTeacherAssignment(event) {
   const consent = document.getElementById('teacherAssignmentConsent').checked;
   const questions = window.teacherDraftQuestions || [];
 
-  if (!title || !subject || !startAtValue || !endAtValue || !instructions) {
+  if (!title || !subject || !type || !startAtValue || !endAtValue || !instructions) {
     showLoginMessage('Veuillez remplir le titre, la matière, les dates et les instructions.', 'error');
     return;
   }
@@ -1215,23 +1330,25 @@ function handleTeacherAssignment(event) {
     publishedAt: new Date().toISOString()
   };
 
-  state.teacherAssignments.unshift(assignment);
-
-  const item = document.createElement('div');
-  item.className = 'list-item';
-  item.innerHTML = `
-    <h4>${title}</h4>
-    <p>${subject} • ${type} • ${duration} min</p>
-    <p>${normalizedQuestions.length} question(s) • corrigé intégré</p>
-    <p>Début : ${startAt.toLocaleString()} • Fin : ${endAt.toLocaleString()}</p>
-  `;
-
-  teacherAssignments.prepend(item);
-  teacherAssignmentForm.reset();
-  window.teacherDraftQuestions = [createEmptyQuestionCard()];
-  renderQuestionBuilder();
-  showLoginMessage('Interrogation publiée. Les réponses seront corrigées automatiquement après soumission.', 'success');
-  window.setTimeout(() => showLoginMessage('', ''), 1500);
+  try {
+    const response = await fetch(`${apiBase}/api/assignments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token}` },
+      body: JSON.stringify(assignment)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      showLoginMessage(data.message || 'Impossible de publier cette évaluation.', 'error');
+      return;
+    }
+    teacherAssignmentForm.reset();
+    window.teacherDraftQuestions = [createEmptyQuestionCard()];
+    await loadTeacherDashboard();
+    showLoginMessage('Évaluation publiée. La correction sera automatique après soumission.', 'success');
+    window.setTimeout(() => showLoginMessage('', ''), 1500);
+  } catch (error) {
+    showLoginMessage('Le serveur est inaccessible pour la publication.', 'error');
+  }
 }
 
 window.addEventListener('beforeunload', () => {
@@ -1264,6 +1381,8 @@ prevBtn.addEventListener('click', goToPreviousQuestion);
 nextBtn.addEventListener('click', goToNextQuestion);
 teacherAssignmentForm.addEventListener('submit', handleTeacherAssignment);
 adminCreateUserForm.addEventListener('submit', handleAdminCreateUser);
+viewTeacherResultsBtn.addEventListener('click', loadTeacherResults);
+exportTeacherResultsBtn.addEventListener('click', exportTeacherResults);
 
 window.teacherDraftQuestions = [createEmptyQuestionCard()];
 renderQuestionBuilder();

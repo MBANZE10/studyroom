@@ -1,7 +1,7 @@
 [
   {
     "id": 1,
-    "fullName": "MOISE GBEMA",
+    "fullName": "Enseignant principal",
     "email": "teacher@studyroom.com",
     "passwordHash": "$2a$10$O/lQWFzcxe7JlamE8.40ouopjyAGPu8r/gv.J5hZ1D8G9MDP1rdAy",
     "role": "teacher",
@@ -67,6 +67,32 @@
     "promotion": null,
     "filiere": "economie",
     "classe": "L2",
+    "specialite": null
+  },
+  {
+    "id": 7,
+    "fullName": "Professeur Test",
+    "email": "teacher.register.test@example.com",
+    "passwordHash": "$2a$10$u4h5ZB5Adb4saFFGSOtmzO4BIF3HzIUnJtAkSdkf5vdWOYnCK8PCi",
+    "role": "student",
+    "sexe": "F",
+    "matricule": null,
+    "promotion": null,
+    "filiere": "Informatique",
+    "classe": "L1-A",
+    "specialite": null
+  },
+  {
+    "id": 8,
+    "fullName": "Professeur Test",
+    "email": "teacher.register.1788290842375@example.com",
+    "passwordHash": "$2a$10$qu7neRoglVT9UiK2iz5ud.X5oObp/0dTXk8zRFNCqV3agA2QA40ni",
+    "role": "teacher",
+    "sexe": "F",
+    "matricule": null,
+    "promotion": null,
+    "filiere": "Informatique",
+    "classe": "L1-A",
     "specialite": null
   }
 ]

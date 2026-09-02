@@ -160,10 +160,11 @@
             </label>
 
             <label>
-              Type
-              <select id="assignmentType">
-                <option value="devoir">Devoir</option>
+              Type d'évaluation
+              <select id="assignmentType" required>
+                <option value="" selected disabled>Choisir un type</option>
                 <option value="interrogation">Interrogation</option>
+                <option value="devoir">Devoir</option>
               </select>
             </label>
 
@@ -222,6 +223,23 @@
             <h3>Étudiants enregistrés</h3>
           </div>
           <div id="teacherStudents" class="list-stack"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Résultats</h3>
+          </div>
+          <label>
+            Évaluation
+            <select id="teacherResultsAssignment" required>
+              <option value="">Choisir une évaluation</option>
+            </select>
+          </label>
+          <div class="quiz-actions">
+            <button id="viewTeacherResultsBtn" class="secondary-button" type="button">Voir les résultats</button>
+            <button id="exportTeacherResultsBtn" class="main-button" type="button">Exporter en Excel</button>
+          </div>
+          <div id="teacherResultsList" class="list-stack"></div>
         </div>
       </div>
     </section>
@@ -328,17 +346,8 @@
         <label for="registerFullName">Nom complet</label>
         <input type="text" id="registerFullName" placeholder="Votre nom complet" required>
 
-        <label for="registerEmail">Adresse e-mail</label>
-        <input type="email" id="registerEmail" placeholder="exemple@email.com" required>
-
-        <label for="registerPassword">Mot de passe</label>
-        <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe" required>
-
-        <label for="registerRole">Type de compte</label>
-        <select id="registerRole">
-          <option value="student">Étudiant</option>
-          <option value="teacher">Enseignant</option>
-        </select>
+        <label for="registerMatricule">Matricule</label>
+        <input type="text" id="registerMatricule" placeholder="Votre matricule" required>
 
         <label for="registerGender">Sexe</label>
         <select id="registerGender">
@@ -346,14 +355,17 @@
           <option value="F">Féminin</option>
         </select>
 
-        <label for="registerMatricule">Matricule</label>
-        <input type="text" id="registerMatricule" placeholder="Matricule ou numéro d'identité">
+        <label for="registerFaculte">Faculté</label>
+        <input type="text" id="registerFaculte" placeholder="Votre faculté" required>
 
-        <label for="registerFiliere">Filière</label>
-        <input type="text" id="registerFiliere" placeholder="Ex : Informatique">
+        <label for="registerPromotion">Promotion</label>
+        <input type="text" id="registerPromotion" placeholder="Votre promotion" required>
 
-        <label for="registerClasse">Classe / groupe</label>
-        <input type="text" id="registerClasse" placeholder="Ex : L1-A / Groupe 2">
+        <label for="registerEmail">Adresse e-mail</label>
+        <input type="email" id="registerEmail" placeholder="exemple@email.com" required>
+
+        <label for="registerPassword">Mot de passe</label>
+        <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe" required>
 
         <button type="submit" class="main-button">Créer mon compte</button>
       </form>
