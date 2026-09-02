@@ -45,6 +45,7 @@ const state = {
   examTimerId: null,
   examAttemptId: null,
   examExpiresAt: null,
+  examExpired: false,
   examLocked: false,
   teacherAssignments: [],
   teacherResults: []
@@ -288,12 +289,15 @@ async function handleLogin(event) {
 
     state.token = data.token;
     state.user = data.user;
+    localStorage.setItem('studyroom_token', state.token);
+    localStorage.setItem('studyroom_user', JSON.stringify(state.user));
     setLoggedUser(data.user);
     closeLogin();
 
     if (data.user.role === 'student') {
       await loadStudentDashboard();
       showOnly('student');
+      await resumeActiveStudentExam();
     } else if (data.user.role === 'teacher') {
       await loadTeacherDashboard();
       showOnly('teacher');
@@ -318,6 +322,8 @@ function logout() {
   state.teacherData = null;
   state.adminUsers = [];
   state.teacherResults = [];
+  localStorage.removeItem('studyroom_token');
+  localStorage.removeItem('studyroom_user');
   setLoggedUser(null);
   showOnly('home');
   closeLogin();
@@ -362,19 +368,25 @@ async function loadStudentDashboard() {
       </div>
     `;
   } else {
-    studentAssignments.innerHTML = state.teacherAssignments.map((item) => `
-      <div class="list-item">
-        <h4>${item.title}</h4>
-        <p>${item.subject} • ${item.type} • ${item.duration} min</p>
-        <p>Début : ${new Date(item.startAt).toLocaleString()} • Fin : ${new Date(item.endAt).toLocaleString()}</p>
-        <button type="button" class="secondary-button start-exam" data-title="${item.title}">Répondre</button>
-      </div>
-    `).join('');
+    studentAssignments.innerHTML = state.teacherAssignments.map((item) => {
+      const statusLabels = { upcoming: 'À venir', available: 'Disponible', in_progress: 'En cours', ended: 'Terminée', submitted: 'Déjà soumise', expired: 'Temps écoulé' };
+      const status = item.studentStatus || 'available';
+      const canStart = status === 'available' || status === 'in_progress';
+      return `
+        <div class="list-item">
+          <h4>${escapeHtml(item.title)}</h4>
+          <p>${item.type === 'interrogation' ? 'Interrogation' : 'Devoir'} • Enseignant : ${escapeHtml(item.teacher || 'Enseignant')}</p>
+          <p>Début : ${new Date(item.startAt).toLocaleString()} • Fin : ${new Date(item.endAt).toLocaleString()}</p>
+          <p>${escapeHtml(item.duration)} min • ${escapeHtml(item.questionCount || 0)} question(s) • Statut : ${escapeHtml(statusLabels[status] || status)}</p>
+          ${canStart ? `<button type="button" class="secondary-button start-exam" data-assignment-id="${escapeHtml(item.id)}">${status === 'in_progress' ? 'Reprendre' : 'Commencer'}</button>` : `<strong>${status === 'submitted' ? '✓ Travail déjà soumis' : escapeHtml(statusLabels[status] || 'Accès fermé')}</strong>`}
+        </div>
+      `;
+    }).join('');
   }
 
   const examButtons = studentAssignments.querySelectorAll('.start-exam');
   examButtons.forEach((button) => {
-    button.addEventListener('click', () => startQuizFromTask(button.dataset.title));
+    button.addEventListener('click', () => startQuizFromTask(button.dataset.assignmentId));
   });
 
   studentSubmissions.innerHTML = `
@@ -592,12 +604,11 @@ async function handleAdminCreateUser(event) {
 }
 
 function getQuizLockState() {
-  return sessionStorage.getItem('studyroom_exam_lock') === 'locked';
+  return false;
 }
 
 function setQuizLockedState(locked) {
   state.examLocked = locked;
-  sessionStorage.setItem('studyroom_exam_lock', locked ? 'locked' : 'open');
 }
 
 function unlockQuizSession() {
@@ -609,17 +620,18 @@ function unlockQuizSession() {
   state.examDurationSeconds = 0;
   state.examAttemptId = null;
   state.examExpiresAt = null;
+  state.examExpired = false;
   setQuizLockedState(false);
   sessionStorage.removeItem('studyroom_active_exam');
 }
 
 function handleQuizExit() {
-  if (state.currentExam && state.user && state.user.role === 'student' && !state.examLocked) {
-    setQuizLockedState(true);
+  if (state.currentExam && state.user && state.user.role === 'student' && !state.examExpired) {
     sessionStorage.setItem('studyroom_active_exam', JSON.stringify({
+      id: state.currentExam.id,
       title: state.currentExam.title,
       startedAt: state.examStartedAt,
-      duration: state.examDurationSeconds
+      expiresAt: state.examExpiresAt
     }));
   }
 }
@@ -699,7 +711,7 @@ async function startQuizFromTask(taskTitle) {
     return;
   }
 
-  const assignment = state.teacherAssignments.find((item) => item.title.toLowerCase().includes(taskTitle.toLowerCase()));
+  const assignment = state.teacherAssignments.find((item) => String(item.id) === String(taskTitle));
   if (!assignment) {
     showLoginMessage('Cette interrogation n’est plus disponible.', 'error');
     return;
@@ -736,11 +748,16 @@ async function startQuizFromTask(taskTitle) {
   state.currentExam = exam;
   state.currentQuestionIndex = 0;
   state.answers = Array(exam.questions.length).fill(null);
+  (data.attempt.answers || []).forEach((answer) => {
+    const answerIndex = exam.questions.findIndex((question) => question.id === Number(answer.questionId));
+    if (answerIndex >= 0) state.answers[answerIndex] = answer.answer;
+  });
   state.examAttemptId = data.attempt.id;
   state.examStartedAt = new Date(data.attempt.startedAt).getTime();
   state.examExpiresAt = new Date(data.attempt.expiresAt).getTime();
   state.examDurationSeconds = (exam.durationMinutes || 30) * 60;
   state.examLocked = false;
+  state.examExpired = false;
   setQuizLockedState(false);
   sessionStorage.removeItem('studyroom_active_exam');
   studentDashboard.classList.add('hidden');
@@ -767,7 +784,7 @@ function startQuizTimer() {
 
     if (remaining <= 0) {
       clearInterval(state.examTimerId);
-      submitExam('Temps écoulé : l’épreuve a été clôturée automatiquement.');
+      expireQuiz();
     }
   }, 1000);
 }
@@ -779,9 +796,12 @@ function renderQuestion() {
 
   document.getElementById('quizTitle').textContent = exam.title;
   progressBar.style.width = `${progress}%`;
+  const answeredCount = state.answers.filter((answer) => answer !== null && answer !== '').length;
+  document.getElementById('quizAnsweredCount').textContent = `${answeredCount} / ${exam.questions.length} questions répondues`;
 
   prevBtn.disabled = state.currentQuestionIndex === 0;
-  nextBtn.textContent = state.currentQuestionIndex === exam.questions.length - 1 ? 'Terminer' : 'Suivant';
+  nextBtn.textContent = state.currentQuestionIndex === exam.questions.length - 1 ? 'Soumettre mon travail' : 'Suivant';
+  nextBtn.disabled = state.examExpired;
 
   const currentAnswer = state.answers[state.currentQuestionIndex] ?? '';
   const isOpenQuestion = question.type === 'ouverte';
@@ -791,7 +811,7 @@ function renderQuestion() {
     answerMarkup = `
       <label>
         Votre réponse
-        <textarea id="openAnswerBox" rows="6" placeholder="Répondez ici...">${typeof currentAnswer === 'string' ? currentAnswer : ''}</textarea>
+        <textarea id="openAnswerBox" rows="6" placeholder="Répondez ici..." ${state.examExpired ? 'disabled' : ''}>${typeof currentAnswer === 'string' ? currentAnswer : ''}</textarea>
       </label>
     `;
   } else {
@@ -799,7 +819,7 @@ function renderQuestion() {
     answerMarkup = `
       <div class="answer-list">
         ${options.map((option, index) => `
-          <button type="button" class="answer-option ${String(currentAnswer) === String(index) ? 'selected' : ''}" data-option-index="${index}">
+          <button type="button" class="answer-option ${String(currentAnswer) === String(index) ? 'selected' : ''}" data-option-index="${index}" ${state.examExpired ? 'disabled' : ''}>
             ${option}
           </button>
         `).join('')}
@@ -818,6 +838,8 @@ function renderQuestion() {
     if (openField) {
       openField.addEventListener('input', (event) => {
         state.answers[state.currentQuestionIndex] = event.target.value;
+        saveAttemptAnswers();
+        updateAnsweredCount();
       });
     }
     return;
@@ -827,9 +849,45 @@ function renderQuestion() {
     button.addEventListener('click', () => {
       const optionIndex = Number(button.dataset.optionIndex);
       state.answers[state.currentQuestionIndex] = optionIndex;
+      saveAttemptAnswers();
       renderQuestion();
     });
   });
+}
+
+function updateAnsweredCount() {
+  if (!state.currentExam) return;
+  const answeredCount = state.answers.filter((answer) => answer !== null && answer !== '').length;
+  document.getElementById('quizAnsweredCount').textContent = `${answeredCount} / ${state.currentExam.questions.length} questions répondues`;
+}
+
+async function resumeActiveStudentExam() {
+  const activeAssignment = state.teacherAssignments.find((item) => item.studentStatus === 'in_progress');
+  if (activeAssignment && !state.currentExam) {
+    await startQuizFromTask(activeAssignment.id);
+  }
+}
+
+function expireQuiz() {
+  state.examExpired = true;
+  state.examLocked = true;
+  quizTimer.textContent = '00:00';
+  renderQuestion();
+  showLoginMessage('Temps écoulé. Cette interrogation est maintenant fermée.', 'error');
+}
+
+async function saveAttemptAnswers() {
+  if (!state.currentExam || !state.token) return;
+  const answers = state.currentExam.questions.map((question, index) => ({ questionId: question.id, answer: state.answers[index] ?? '' }));
+  try {
+    await fetch(`${apiBase}/api/assignments/${state.currentExam.id}/attempt`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token}` },
+      body: JSON.stringify({ answers })
+    });
+  } catch (error) {
+    // La soumission finale reste la source de vérité si la sauvegarde temporaire échoue.
+  }
 }
 
 function goToPreviousQuestion() {
@@ -1023,6 +1081,15 @@ async function exportCurrentExamResultToExcel() {
 async function submitExam(customMessage = '') {
   const exam = state.currentExam;
   if (!exam) {
+    return;
+  }
+
+  if (state.examExpired) {
+    showLoginMessage('Votre temps est écoulé. La tentative est maintenant fermée.', 'error');
+    return;
+  }
+
+  if (!customMessage && !window.confirm('Êtes-vous sûr de vouloir soumettre votre travail ? Après soumission, vous ne pourrez plus modifier vos réponses.')) {
     return;
   }
 
@@ -1426,7 +1493,33 @@ adminStudentSearch.addEventListener('input', renderAdminStudents);
 viewTeacherResultsBtn.addEventListener('click', loadTeacherResults);
 exportTeacherResultsBtn.addEventListener('click', exportTeacherResults);
 
+async function restoreSession() {
+  const savedToken = localStorage.getItem('studyroom_token');
+  const savedUser = localStorage.getItem('studyroom_user');
+  if (!savedToken || !savedUser) return;
+
+  try {
+    state.token = savedToken;
+    state.user = JSON.parse(savedUser);
+    setLoggedUser(state.user);
+    if (state.user.role === 'student') {
+      await loadStudentDashboard();
+      showOnly('student');
+      await resumeActiveStudentExam();
+    } else if (state.user.role === 'teacher') {
+      await loadTeacherDashboard();
+      showOnly('teacher');
+    } else if (state.user.role === 'admin') {
+      await loadAdminDashboard();
+      showOnly('admin');
+    }
+  } catch (error) {
+    logout();
+  }
+}
+
 window.teacherDraftQuestions = [createEmptyQuestionCard()];
 renderQuestionBuilder();
 showOnly('home');
 setLoggedUser(null);
+restoreSession();

@@ -130,6 +130,7 @@ function normalizeAnswer(value) {
 }
 
 function publicAssignment(assignment) {
+  const teacher = users.find((user) => user.id === assignment.teacherId);
   return {
     id: assignment.id,
     title: assignment.title,
@@ -137,6 +138,7 @@ function publicAssignment(assignment) {
     instructions: assignment.instructions,
     type: assignment.type,
     teacherId: assignment.teacherId,
+    teacher: teacher?.fullName || 'Enseignant',
     startAt: assignment.startAt,
     endAt: assignment.endAt,
     duration: assignment.duration,
@@ -212,6 +214,19 @@ function calculateQuestion(question, answer) {
   const matches = keywords.filter((word) => submitted.includes(word)).length;
   const awarded = keywords.length ? Math.min(points, points * matches / keywords.length) : (submitted === expected ? points : 0);
   return { points: Number(awarded.toFixed(2)), maxPoints: points };
+}
+
+function assignmentStatusForStudent(assignment, studentId) {
+  const attempt = submissions.find((item) => item.assignmentId === assignment.id && item.studentId === studentId);
+  if (attempt?.status === 'submitted') return 'submitted';
+  if (attempt?.status === 'in_progress') return Date.now() >= new Date(attempt.expiresAt).getTime() ? 'expired' : 'in_progress';
+  if (Date.now() < new Date(assignment.startAt).getTime()) return 'upcoming';
+  if (Date.now() > new Date(assignment.endAt).getTime()) return 'ended';
+  return 'available';
+}
+
+function studentAssignment(assignment, studentId) {
+  return { ...publicAssignment(assignment), studentStatus: assignmentStatusForStudent(assignment, studentId) };
 }
 
 app.get('/api/health', (req, res) => {
@@ -325,14 +340,14 @@ app.get('/api/student/dashboard', authenticate, authorize(['student']), (req, re
     user: { fullName: user.fullName, email: user.email, matricule: user.matricule, promotion: user.promotion, faculte: user.faculte || user.filiere, filiere: user.filiere, classe: user.classe, sexe: user.sexe },
     dashboard: {
       courses: [],
-      assignments: assignments.filter((item) => item.status === 'published').map(publicAssignment)
+      assignments: assignments.filter((item) => item.status === 'published').map((item) => studentAssignment(item, req.user.id))
     }
   });
 });
 
 app.get('/api/assignments', authenticate, (req, res) => {
   if (req.user.role === 'student') {
-    return res.json({ assignments: assignments.filter((item) => item.status === 'published').map(publicAssignment) });
+    return res.json({ assignments: assignments.filter((item) => item.status === 'published').map((item) => studentAssignment(item, req.user.id)) });
   }
 
   return res.json({ assignments: assignments.filter((item) => item.teacherId === req.user.id).map(teacherAssignment) });
@@ -399,15 +414,55 @@ app.post('/api/assignments/:assignmentId/start', authenticate, authorize(['stude
   const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
   if (!assignment || assignment.status !== 'published') return res.status(404).json({ message: 'Évaluation introuvable.' });
   const now = Date.now();
-  if (now < new Date(assignment.startAt).getTime()) return res.status(403).json({ message: 'L’évaluation n’est pas encore ouverte.' });
-  if (now > new Date(assignment.endAt).getTime()) return res.status(403).json({ message: 'L’évaluation est terminée.' });
-  if (submissions.some((item) => item.assignmentId === assignment.id && item.studentId === req.user.id)) return res.status(409).json({ message: 'Une seule tentative est autorisée pour cette évaluation.' });
+  if (now < new Date(assignment.startAt).getTime()) return res.status(403).json({ message: `Cette interrogation n’est pas encore disponible. Elle sera accessible à partir de ${new Date(assignment.startAt).toLocaleString('fr-FR')}.` });
+  if (now > new Date(assignment.endAt).getTime()) return res.status(403).json({ message: 'Le temps disponible pour cette interrogation est écoulé. L’accès est fermé.' });
+  const existingAttempt = submissions.find((item) => item.assignmentId === assignment.id && item.studentId === req.user.id);
+  if (existingAttempt?.status === 'submitted') return res.status(409).json({ message: 'Vous avez déjà soumis cette interrogation.' });
+  if (existingAttempt?.status === 'expired') return res.status(403).json({ message: 'Votre temps est écoulé. La tentative est maintenant fermée.' });
+  if (existingAttempt?.status === 'in_progress') {
+    const remainingSeconds = Math.max(Math.ceil((new Date(existingAttempt.expiresAt).getTime() - Date.now()) / 1000), 0);
+    if (!remainingSeconds) {
+      existingAttempt.status = 'expired';
+      saveSubmissions();
+      return res.status(403).json({ message: 'Votre temps est écoulé. La tentative est maintenant fermée.' });
+    }
+    return res.status(200).json({ attempt: { id: existingAttempt.id, startedAt: existingAttempt.startedAt, expiresAt: existingAttempt.expiresAt, remainingSeconds, answers: existingAttempt.answers || [] }, assignment: publicAssignment(assignment) });
+  }
   const startedAt = new Date(now);
   const expiresAt = new Date(Math.min(now + assignment.duration * 60000, new Date(assignment.endAt).getTime()));
   const attempt = { id: nextId(submissions), assignmentId: assignment.id, studentId: req.user.id, startedAt: startedAt.toISOString(), expiresAt: expiresAt.toISOString(), status: 'in_progress', answers: [] };
   submissions.push(attempt);
   saveSubmissions();
-  return res.status(201).json({ attempt: { id: attempt.id, startedAt: attempt.startedAt, expiresAt: attempt.expiresAt }, assignment: publicAssignment(assignment) });
+  return res.status(201).json({ attempt: { id: attempt.id, startedAt: attempt.startedAt, expiresAt: attempt.expiresAt, remainingSeconds: Math.max(Math.ceil((expiresAt.getTime() - now) / 1000), 0), answers: [] }, assignment: publicAssignment(assignment) });
+});
+
+app.get('/api/assignments/:assignmentId/attempt', authenticate, authorize(['student']), (req, res) => {
+  const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
+  const attempt = submissions.find((item) => item.assignmentId === Number(req.params.assignmentId) && item.studentId === req.user.id && item.status === 'in_progress');
+  if (!assignment || !attempt) return res.status(404).json({ message: 'Aucune tentative en cours.' });
+  const remainingSeconds = Math.max(Math.ceil((new Date(attempt.expiresAt).getTime() - Date.now()) / 1000), 0);
+  if (!remainingSeconds) {
+    attempt.status = 'expired';
+    saveSubmissions();
+    return res.status(403).json({ message: 'Votre temps est écoulé. La tentative est maintenant fermée.' });
+  }
+  return res.json({ attempt: { id: attempt.id, startedAt: attempt.startedAt, expiresAt: attempt.expiresAt, remainingSeconds, answers: attempt.answers || [] }, assignment: publicAssignment(assignment) });
+});
+
+app.patch('/api/assignments/:assignmentId/attempt', authenticate, authorize(['student']), (req, res) => {
+  const attempt = submissions.find((item) => item.assignmentId === Number(req.params.assignmentId) && item.studentId === req.user.id && item.status === 'in_progress');
+  if (!attempt) return res.status(404).json({ message: 'Tentative introuvable ou déjà fermée.' });
+  if (Date.now() > new Date(attempt.expiresAt).getTime()) {
+    attempt.status = 'expired';
+    saveSubmissions();
+    return res.status(403).json({ message: 'Votre temps est écoulé. La tentative est maintenant fermée.' });
+  }
+  const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+  const assignment = assignments.find((item) => item.id === attempt.assignmentId);
+  const validQuestionIds = new Set(assignment.questions.map((question) => question.id));
+  attempt.answers = answers.filter((answer) => validQuestionIds.has(Number(answer.questionId))).map((answer) => ({ questionId: Number(answer.questionId), answer: answer.answer }));
+  saveSubmissions();
+  return res.status(204).send();
 });
 
 app.post('/api/assignments/:assignmentId/submit', authenticate, authorize(['student']), (req, res) => {
