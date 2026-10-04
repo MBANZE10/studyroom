@@ -56,8 +56,14 @@ function serializeUser(user) {
     faculte: user.faculte || user.filiere || null,
     classe: user.classe || null,
     specialite: user.specialite || null,
-    createdAt: user.createdAt || null
+    createdAt: user.createdAt || null,
+    isActive: user.isActive !== false,
+    deletedAt: user.deletedAt || null
   };
+}
+
+function isUserActive(user) {
+  return !!user && user.isActive !== false && !user.deletedAt;
 }
 
 function createUserRecord(payload) {
@@ -77,7 +83,9 @@ function createUserRecord(payload) {
     faculte: payload.faculte || payload.filiere || null,
     classe: payload.classe || null,
     specialite: payload.specialite || null,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    isActive: true,
+    deletedAt: null
   };
 
   users.push(newUser);
@@ -114,6 +122,7 @@ function ensureDefaultAccounts() {
 ensureDefaultAccounts();
 
 const assignmentTypes = new Set(['interrogation', 'devoir', 'examen']);
+const studyRoomTimeZone = 'Africa/Kinshasa';
 
 function nextId(items) {
   return items.length ? Math.max(...items.map((item) => Number(item.id) || 0)) + 1 : 1;
@@ -127,6 +136,44 @@ function normalizeAnswer(value) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ');
+}
+
+function parseStudyRoomDate(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return null;
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(rawValue)) {
+    const instant = new Date(rawValue);
+    return Number.isNaN(instant.getTime()) ? null : instant;
+  }
+
+  const match = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second = '00'] = match;
+  const wallClockAsUtc = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+  let candidate = wallClockAsUtc;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: studyRoomTimeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  });
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(candidate)).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+    const displayedAsUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+    candidate = wallClockAsUtc - (displayedAsUtc - candidate);
+  }
+
+  return new Date(candidate);
+}
+
+function formatStudyRoomDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date invalide';
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    timeZone: studyRoomTimeZone,
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return `${parts.day}/${parts.month}/${parts.year} à ${parts.hour}:${parts.minute}`;
 }
 
 function publicAssignment(assignment) {
@@ -230,10 +277,23 @@ function studentAssignment(assignment, studentId) {
 }
 
 app.get('/api/health', (req, res) => {
+  const serverNow = Date.now();
   res.json({
     message: 'StudyRoom API est en ligne.',
     status: 'ok',
-    version: '1.0.0'
+    version: '1.0.0',
+    timezone: studyRoomTimeZone,
+    serverNow,
+    kinshasaTime: formatStudyRoomDate(serverNow)
+  });
+});
+
+app.get('/api/server-time', (req, res) => {
+  res.json({
+    timezone: studyRoomTimeZone,
+    serverNow: Date.now(),
+    serverIso: new Date().toISOString(),
+    kinshasaTime: formatStudyRoomDate(Date.now())
   });
 });
 
@@ -283,7 +343,7 @@ app.post('/api/auth/login', (req, res) => {
 
   const user = users.find((item) => item.email.toLowerCase() === email.toLowerCase());
 
-  if (!user || !verifyPassword(password, user.passwordHash)) {
+  if (!user || !isUserActive(user) || !verifyPassword(password, user.passwordHash)) {
     return res.status(401).json({ message: 'Identifiants incorrects.' });
   }
 
@@ -359,8 +419,8 @@ app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) =>
     return res.status(400).json({ message: 'Les informations et les questions de l’évaluation sont obligatoires.' });
   }
 
-  const start = new Date(startAt);
-  const end = new Date(endAt);
+  const start = parseStudyRoomDate(startAt);
+  const end = parseStudyRoomDate(endAt);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
     return res.status(400).json({ message: 'Les dates de l’évaluation sont invalides.' });
   }
@@ -414,7 +474,7 @@ app.post('/api/assignments/:assignmentId/start', authenticate, authorize(['stude
   const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
   if (!assignment || assignment.status !== 'published') return res.status(404).json({ message: 'Évaluation introuvable.' });
   const now = Date.now();
-  if (now < new Date(assignment.startAt).getTime()) return res.status(403).json({ message: `Cette interrogation n’est pas encore disponible. Elle sera accessible à partir de ${new Date(assignment.startAt).toLocaleString('fr-FR')}.` });
+  if (now < new Date(assignment.startAt).getTime()) return res.status(403).json({ message: `Cette interrogation n’est pas encore disponible. Elle sera accessible à partir de ${formatStudyRoomDate(assignment.startAt)}.` });
   if (now > new Date(assignment.endAt).getTime()) return res.status(403).json({ message: 'Le temps disponible pour cette interrogation est écoulé. L’accès est fermé.' });
   const existingAttempt = submissions.find((item) => item.assignmentId === assignment.id && item.studentId === req.user.id);
   if (existingAttempt?.status === 'submitted') return res.status(409).json({ message: 'Vous avez déjà soumis cette interrogation.' });
@@ -426,14 +486,14 @@ app.post('/api/assignments/:assignmentId/start', authenticate, authorize(['stude
       saveSubmissions();
       return res.status(403).json({ message: 'Votre temps est écoulé. La tentative est maintenant fermée.' });
     }
-    return res.status(200).json({ attempt: { id: existingAttempt.id, startedAt: existingAttempt.startedAt, expiresAt: existingAttempt.expiresAt, remainingSeconds, answers: existingAttempt.answers || [] }, assignment: publicAssignment(assignment) });
+    return res.status(200).json({ serverNow: Date.now(), attempt: { id: existingAttempt.id, startedAt: existingAttempt.startedAt, expiresAt: existingAttempt.expiresAt, remainingSeconds, answers: existingAttempt.answers || [] }, assignment: publicAssignment(assignment) });
   }
   const startedAt = new Date(now);
   const expiresAt = new Date(Math.min(now + assignment.duration * 60000, new Date(assignment.endAt).getTime()));
   const attempt = { id: nextId(submissions), assignmentId: assignment.id, studentId: req.user.id, startedAt: startedAt.toISOString(), expiresAt: expiresAt.toISOString(), status: 'in_progress', answers: [] };
   submissions.push(attempt);
   saveSubmissions();
-  return res.status(201).json({ attempt: { id: attempt.id, startedAt: attempt.startedAt, expiresAt: attempt.expiresAt, remainingSeconds: Math.max(Math.ceil((expiresAt.getTime() - now) / 1000), 0), answers: [] }, assignment: publicAssignment(assignment) });
+  return res.status(201).json({ serverNow: Date.now(), attempt: { id: attempt.id, startedAt: attempt.startedAt, expiresAt: attempt.expiresAt, remainingSeconds: Math.max(Math.ceil((expiresAt.getTime() - now) / 1000), 0), answers: [] }, assignment: publicAssignment(assignment) });
 });
 
 app.get('/api/assignments/:assignmentId/attempt', authenticate, authorize(['student']), (req, res) => {
@@ -446,7 +506,7 @@ app.get('/api/assignments/:assignmentId/attempt', authenticate, authorize(['stud
     saveSubmissions();
     return res.status(403).json({ message: 'Votre temps est écoulé. La tentative est maintenant fermée.' });
   }
-  return res.json({ attempt: { id: attempt.id, startedAt: attempt.startedAt, expiresAt: attempt.expiresAt, remainingSeconds, answers: attempt.answers || [] }, assignment: publicAssignment(assignment) });
+  return res.json({ serverNow: Date.now(), attempt: { id: attempt.id, startedAt: attempt.startedAt, expiresAt: attempt.expiresAt, remainingSeconds, answers: attempt.answers || [] }, assignment: publicAssignment(assignment) });
 });
 
 app.patch('/api/assignments/:assignmentId/attempt', authenticate, authorize(['student']), (req, res) => {
@@ -529,19 +589,53 @@ app.get('/api/teacher/dashboard', authenticate, authorize(['teacher']), (req, re
 });
 
 app.get('/api/admin/users', authenticate, authorize(['admin']), (req, res) => {
+  const activeUsers = users.filter(isUserActive).map(serializeUser);
+
   res.json({
-    users: users.map(serializeUser)
+    users: activeUsers
   });
 });
 
 app.get('/api/admin/students', authenticate, authorize(['admin']), (req, res) => {
+  const rawPage = Number(req.query.page) || 1;
+  const rawLimit = Number(req.query.limit) || 50;
+  const page = Math.max(1, rawPage);
+  const limit = Math.min(100, Math.max(1, rawLimit));
   const students = users
-    .filter((user) => user.role === 'student')
-    .map(serializeUser);
+    .filter((user) => user.role === 'student' && isUserActive(user))
+    .map(serializeUser)
+    .sort((first, second) => String(first.fullName || '').localeCompare(String(second.fullName || '')));
+
+  const total = students.length;
+  const startIndex = (page - 1) * limit;
 
   res.json({
-    total: students.length,
-    students
+    total,
+    page,
+    limit,
+    students: students.slice(startIndex, startIndex + limit)
+  });
+});
+
+app.delete('/api/admin/students/:id', authenticate, authorize(['admin']), (req, res) => {
+  const studentId = Number(req.params.id);
+  const student = users.find((user) => user.id === studentId && user.role === 'student');
+
+  if (!student) {
+    return res.status(404).json({ message: 'Étudiant introuvable.' });
+  }
+
+  if (!isUserActive(student)) {
+    return res.status(410).json({ message: 'Ce compte étudiant a déjà été supprimé.' });
+  }
+
+  student.isActive = false;
+  student.deletedAt = new Date().toISOString();
+  saveUsers();
+
+  return res.json({
+    message: 'Compte étudiant supprimé avec succès.',
+    student: serializeUser(student)
   });
 });
 

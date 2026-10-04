@@ -94,5 +94,39 @@
     "filiere": "Informatique",
     "classe": "L1-A",
     "specialite": null
+  },
+  {
+    "id": 9,
+    "fullName": "Étudiant à supprimer",
+    "email": "student.delete.1791132051777@example.com",
+    "passwordHash": "$2a$10$vAuy7YJwjIq393utgSCbSOlQ3Q3E0vdQC3cZ/yUjajDeV0GouKUU.",
+    "role": "student",
+    "sexe": "M",
+    "matricule": "MAT-1791132051777",
+    "promotion": "2026",
+    "filiere": "Informatique",
+    "faculte": "Informatique",
+    "classe": null,
+    "specialite": null,
+    "createdAt": "2026-10-04T16:40:52.167Z",
+    "isActive": false,
+    "deletedAt": "2026-10-04T16:40:52.221Z"
+  },
+  {
+    "id": 10,
+    "fullName": "Étudiant à supprimer",
+    "email": "student.delete.1791132076029@example.com",
+    "passwordHash": "$2a$10$HBkIOYkPE0vRA13d4IPYZuFfU1ZLApOsebwR7lf1ybhkcHSFTHsbi",
+    "role": "student",
+    "sexe": "M",
+    "matricule": "MAT-1791132076029",
+    "promotion": "2026",
+    "filiere": "Informatique",
+    "faculte": "Informatique",
+    "classe": null,
+    "specialite": null,
+    "createdAt": "2026-10-04T16:41:16.384Z",
+    "isActive": false,
+    "deletedAt": "2026-10-04T16:41:16.415Z"
   }
 ]

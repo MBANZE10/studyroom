@@ -61,11 +61,12 @@
     </section>
 
     <section id="studentDashboard" class="dashboard-section hidden">
-      <div class="page-header">
+      <div class="page-header page-header-inline">
         <div>
           <p class="subtitle">ESPACE ÉTUDIANT</p>
           <h2 id="studentTitle">Tableau de bord</h2>
         </div>
+        <button type="button" class="ghost-button home-return-button" data-home-return>← Retour à l'accueil</button>
       </div>
 
       <div class="stats-grid">
@@ -120,11 +121,12 @@
     </section>
 
     <section id="teacherDashboard" class="dashboard-section hidden">
-      <div class="page-header">
+      <div class="page-header page-header-inline">
         <div>
           <p class="subtitle">ESPACE ENSEIGNANT</p>
           <h2>Tableau de bord</h2>
         </div>
+        <button type="button" class="ghost-button home-return-button" data-home-return>← Retour à l'accueil</button>
       </div>
 
       <div class="stats-grid">
@@ -182,6 +184,8 @@
               Durée de l’évaluation (minutes)
               <input type="number" id="assignmentDuration" min="10" max="120" value="30">
             </label>
+
+            <p class="timezone-note">Fuseau horaire : Africa/Kinshasa (UTC+1)</p>
 
             <label>
               Instructions générales
@@ -245,11 +249,12 @@
     </section>
 
     <section id="adminDashboard" class="dashboard-section hidden">
-      <div class="page-header">
+      <div class="page-header page-header-inline">
         <div>
           <p class="subtitle">ESPACE ADMIN</p>
           <h2>Gestion des comptes</h2>
         </div>
+        <button type="button" class="ghost-button home-return-button" data-home-return>← Retour à l'accueil</button>
       </div>
 
       <div class="stats-grid">
@@ -301,6 +306,7 @@
                   <th>Promotion</th>
                   <th>E-mail</th>
                   <th>Création du compte</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="adminStudentsTableBody"></tbody>
@@ -356,6 +362,7 @@
         <button type="button" id="forgotPasswordBtn" class="ghost-button register-link">Mot de passe oublié ?</button>
         <button type="submit" class="main-button">Se connecter</button>
         <button type="button" id="showRegisterBtn" class="ghost-button register-link">Créer un compte</button>
+        <button type="button" class="ghost-button register-link" data-home-return>← Retour à l'accueil</button>
       </form>
     </div>
   </div>
@@ -394,6 +401,7 @@
         <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe" required>
 
         <button type="submit" class="main-button">Créer mon compte</button>
+        <button type="button" class="ghost-button register-link" data-home-return>← Retour à l'accueil</button>
       </form>
     </div>
   </div>
@@ -465,6 +473,7 @@
         </label>
 
         <button type="submit" class="main-button small-button">Enregistrer le compte</button>
+        <button type="button" class="ghost-button register-link" data-home-return>← Retour à l'accueil</button>
       </form>
     </div>
   </div>

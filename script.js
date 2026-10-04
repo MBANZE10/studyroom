@@ -1,8 +1,19 @@
 const configuredApiBase = window.STUDYROOM_CONFIG?.apiBaseUrl;
 const apiBase = typeof configuredApiBase === 'string' ? configuredApiBase.replace(/\/$/, '') : '';
+const studyRoomTimeZone = 'Africa/Kinshasa';
 
 if (!apiBase) {
   throw new Error('StudyRoom: apiBaseUrl doit être configurée dans config.js.');
+}
+
+function formatStudyRoomDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date invalide';
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    timeZone: studyRoomTimeZone,
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return `${parts.day}/${parts.month}/${parts.year} à ${parts.hour}:${parts.minute}`;
 }
 
 const exams = [
@@ -45,8 +56,11 @@ const state = {
   examTimerId: null,
   examAttemptId: null,
   examExpiresAt: null,
+  timerRemainingSeconds: 0,
+  timerStartedAt: 0,
   examExpired: false,
   examLocked: false,
+  serverTimeOffsetMs: 0,
   teacherAssignments: [],
   teacherResults: []
 };
@@ -216,6 +230,16 @@ function showOnly(viewName) {
   quizPanel.classList.toggle('hidden', true);
 }
 
+function goHome() {
+  closeLogin();
+  closeRegister();
+  closeAdminCreateModalWindow();
+  if (state.currentExam) {
+    unlockQuizSession();
+  }
+  showOnly('home');
+}
+
 function setLoggedUser(user) {
   state.user = user;
   userLabel.textContent = user ? user.fullName : '';
@@ -376,7 +400,7 @@ async function loadStudentDashboard() {
         <div class="list-item">
           <h4>${escapeHtml(item.title)}</h4>
           <p>${item.type === 'interrogation' ? 'Interrogation' : 'Devoir'} • Enseignant : ${escapeHtml(item.teacher || 'Enseignant')}</p>
-          <p>Début : ${new Date(item.startAt).toLocaleString()} • Fin : ${new Date(item.endAt).toLocaleString()}</p>
+          <p>Début : ${formatStudyRoomDate(item.startAt)} • Fin : ${formatStudyRoomDate(item.endAt)}</p>
           <p>${escapeHtml(item.duration)} min • ${escapeHtml(item.questionCount || 0)} question(s) • Statut : ${escapeHtml(statusLabels[status] || status)}</p>
           ${canStart ? `<button type="button" class="secondary-button start-exam" data-assignment-id="${escapeHtml(item.id)}">${status === 'in_progress' ? 'Reprendre' : 'Commencer'}</button>` : `<strong>${status === 'submitted' ? '✓ Travail déjà soumis' : escapeHtml(statusLabels[status] || 'Accès fermé')}</strong>`}
         </div>
@@ -474,7 +498,7 @@ async function loadTeacherDashboard() {
         <h4>${item.title}</h4>
         <p>${item.subject} • ${item.type}</p>
         <p>${Array.isArray(item.questions) ? item.questions.length : 0} question(s) • corrigé intégré</p>
-        <p>Début : ${new Date(item.startAt).toLocaleString()} • Fin : ${new Date(item.endAt).toLocaleString()}</p>
+        <p>Début : ${formatStudyRoomDate(item.startAt)} • Fin : ${formatStudyRoomDate(item.endAt)}</p>
         <p>Durée : ${item.duration} min</p>
       </div>
     `).join('');
@@ -550,11 +574,48 @@ function renderAdminStudents() {
       <td>${escapeHtml(student.faculte || student.filiere || 'Non renseignée')}</td>
       <td>${escapeHtml(student.promotion || 'Non renseignée')}</td>
       <td>${escapeHtml(student.email)}</td>
-      <td>${escapeHtml(student.createdAt ? new Date(student.createdAt).toLocaleString('fr-FR') : 'Non disponible')}</td>
+      <td>${escapeHtml(student.createdAt ? formatStudyRoomDate(student.createdAt) : 'Non disponible')}</td>
+      <td>
+        <button type="button" class="danger-button delete-student-btn" data-student-id="${student.id}">Supprimer</button>
+      </td>
     </tr>
   `).join('') : `
-    <tr><td colspan="7">Aucun étudiant trouvé.</td></tr>
+    <tr><td colspan="8">Aucun étudiant trouvé.</td></tr>
   `;
+
+  adminStudentsTableBody.querySelectorAll('.delete-student-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const studentId = Number(button.dataset.studentId);
+      const student = state.adminStudents.find((item) => Number(item.id) === studentId);
+      if (!student) {
+        return;
+      }
+
+      const confirmed = window.confirm('Êtes-vous sûr de vouloir supprimer ce compte étudiant ?\nCette action peut être irréversible.');
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBase}/api/admin/students/${studentId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${state.token}` }
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          showLoginMessage(data.message || 'La suppression de cet étudiant a échoué.', 'error');
+          return;
+        }
+
+        state.adminStudents = state.adminStudents.filter((item) => Number(item.id) !== studentId);
+        renderAdminStudents();
+        showLoginMessage('Compte étudiant supprimé avec succès.', 'success');
+      } catch (error) {
+        showLoginMessage('La suppression n’a pas pu être exécutée. Vérifiez la connexion avec le serveur.', 'error');
+      }
+    });
+  });
 }
 
 async function handleAdminCreateUser(event) {
@@ -620,6 +681,8 @@ function unlockQuizSession() {
   state.examDurationSeconds = 0;
   state.examAttemptId = null;
   state.examExpiresAt = null;
+  state.timerRemainingSeconds = 0;
+  state.timerStartedAt = 0;
   state.examExpired = false;
   setQuizLockedState(false);
   sessionStorage.removeItem('studyroom_active_exam');
@@ -755,6 +818,9 @@ async function startQuizFromTask(taskTitle) {
   state.examAttemptId = data.attempt.id;
   state.examStartedAt = new Date(data.attempt.startedAt).getTime();
   state.examExpiresAt = new Date(data.attempt.expiresAt).getTime();
+  state.serverTimeOffsetMs = Number(data.serverNow) - Date.now();
+  state.timerRemainingSeconds = Number(data.attempt.remainingSeconds) || 0;
+  state.timerStartedAt = Date.now();
   state.examDurationSeconds = (exam.durationMinutes || 30) * 60;
   state.examLocked = false;
   state.examExpired = false;
@@ -777,7 +843,8 @@ function startQuizTimer() {
       return;
     }
 
-    const remaining = Math.max(Math.ceil((state.examExpiresAt - Date.now()) / 1000), 0);
+    const effectiveNow = Date.now() + state.serverTimeOffsetMs;
+    const remaining = Math.max(Math.ceil((state.examExpiresAt - effectiveNow) / 1000), 0);
     const minutes = String(Math.floor(remaining / 60)).padStart(2, '0');
     const seconds = String(remaining % 60).padStart(2, '0');
     quizTimer.textContent = `${minutes}:${seconds}`;
@@ -1409,10 +1476,8 @@ async function handleTeacherAssignment(event) {
   }
 
   const startAt = new Date(startAtValue);
-  const endAt = new Date(endAtValue);
-
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || endAt <= startAt) {
-    showLoginMessage('L’heure de fin doit être supérieure à l’heure de début.', 'error');
+  if (endAtValue <= startAtValue || Number.isNaN(startAt.getTime())) {
+    showLoginMessage('L’heure de fin doit être supérieure à l’heure de début et les dates doivent être valides.', 'error');
     return;
   }
 
@@ -1470,6 +1535,9 @@ window.addEventListener('visibilitychange', () => {
 });
 
 document.getElementById('addQuestionBtn').addEventListener('click', addQuestionBuilder);
+document.querySelectorAll('[data-home-return]').forEach((button) => {
+  button.addEventListener('click', goHome);
+});
 openLoginBtn.addEventListener('click', openLogin);
 accessBtn.addEventListener('click', openLogin);
 closeLoginModal.addEventListener('click', closeLogin);

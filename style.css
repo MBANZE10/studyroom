@@ -206,6 +206,20 @@ button {
   margin-bottom: 50px;
 }
 
+.page-header-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+  margin-bottom: 24px;
+}
+
+.home-return-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .section-header p,
 .page-header p {
   color: #2563eb;
@@ -519,7 +533,8 @@ button {
 }
 
 .ghost-button,
-.secondary-button {
+.secondary-button,
+.danger-button {
   padding: 12px 18px;
   font-size: 15px;
 }
@@ -532,6 +547,15 @@ button {
 .secondary-button {
   background: #edf2f7;
   color: #1f2937;
+}
+
+.danger-button {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .secondary-button:disabled {

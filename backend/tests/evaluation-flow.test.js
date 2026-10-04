@@ -71,6 +71,26 @@ async function request(route, options = {}) {
     assert.equal(studentLogin.response.status, 200);
     const teacherToken = teacherLogin.body.token;
     const studentToken = studentLogin.body.token;
+    const timezoneAssignment = await request('/api/assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${teacherToken}` },
+      body: JSON.stringify({
+        title: `Timezone ${Date.now()}`,
+        subject: 'Mathematiques',
+        type: 'interrogation',
+        startAt: '2030-09-02T10:00',
+        endAt: '2030-09-02T11:00',
+        duration: 30,
+        instructions: 'Test fuseau.',
+        questions: [{ id: 1, type: 'qcm', text: 'Question ?', options: ['A', 'B'], correctAnswer: 'A', points: 1 }]
+      })
+    });
+    assert.equal(timezoneAssignment.response.status, 201);
+    assert.equal(timezoneAssignment.body.assignment.startAt, '2030-09-02T09:00:00.000Z');
+    assert.equal(timezoneAssignment.body.assignment.endAt, '2030-09-02T10:00:00.000Z');
+    const displayParts = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Africa/Kinshasa', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(timezoneAssignment.body.assignment.startAt));
+    assert.equal(displayParts, '10:00');
+
     const assignment = await request('/api/assignments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${teacherToken}` },
