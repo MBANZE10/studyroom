@@ -23,7 +23,9 @@
       <section class="hero">
         <div class="hero-content">
           <p class="subtitle">PLATEFORME ESTUDIANTINE</p>
-          <h1>Votre espace pour <span>apprendre et réussir.</span></h1>
+          <h1 class="hero-title">
+            <span id="heroTitleText" aria-live="polite">StudyRoom</span>
+          </h1>
           <p class="description">
             StudyRoom permet aux étudiants et enseignants de gérer cours, devoirs, interrogations,
             soumissions, notes et résultats depuis une même plateforme professionnelle.
@@ -157,16 +159,36 @@
             </label>
 
             <label>
-              Matière
-              <input type="text" id="assignmentSubject" required>
-            </label>
-
-            <label>
               Type d'évaluation
               <select id="assignmentType" required>
                 <option value="" selected disabled>Choisir un type</option>
                 <option value="interrogation">Interrogation</option>
                 <option value="devoir">Devoir</option>
+                <option value="examen">Examen</option>
+              </select>
+            </label>
+
+            <label>
+              Faculté concernée
+              <select id="assignmentFaculty" required>
+                <option value="">Choisir la faculté</option>
+                <option value="informatique">Informatique</option>
+                <option value="droit">Droit</option>
+                <option value="medecine">Médecine</option>
+                <option value="economie">Économie</option>
+                <option value="sciences sociales">Sciences sociales</option>
+              </select>
+            </label>
+
+            <label>
+              Promotion concernée
+              <select id="assignmentPromotion" required>
+                <option value="">Choisir la promotion</option>
+                <option value="L1">L1</option>
+                <option value="L2">L2</option>
+                <option value="L3">L3</option>
+                <option value="M1">M1</option>
+                <option value="M2">M2</option>
               </select>
             </label>
 

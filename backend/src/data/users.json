@@ -128,5 +128,22 @@
     "createdAt": "2026-10-04T16:41:16.384Z",
     "isActive": false,
     "deletedAt": "2026-10-04T16:41:16.415Z"
+  },
+  {
+    "id": 11,
+    "fullName": "Étudiant à supprimer",
+    "email": "student.delete.1791136330636@example.com",
+    "passwordHash": "$2a$10$IwMZKYmt2gFQ.ijDyEyteO1q5Q9inp4290qJBSCsZO9LrECBpmUKm",
+    "role": "student",
+    "sexe": "M",
+    "matricule": "MAT-1791136330636",
+    "promotion": "2026",
+    "filiere": "Informatique",
+    "faculte": "Informatique",
+    "classe": null,
+    "specialite": null,
+    "createdAt": "2026-10-04T17:52:10.789Z",
+    "isActive": false,
+    "deletedAt": "2026-10-04T17:52:10.807Z"
   }
 ]

@@ -272,8 +272,38 @@ function assignmentStatusForStudent(assignment, studentId) {
   return 'available';
 }
 
+function normalizeAcademicValue(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function studentMatchesAssignment(student, assignment) {
+  if (!assignment) return false;
+  const requiredFaculty = normalizeAcademicValue(assignment.faculty || assignment.faculte);
+  const requiredPromotion = normalizeAcademicValue(assignment.promotion || assignment.promo || '');
+  const studentFaculty = normalizeAcademicValue(student?.faculte || student?.filiere || '');
+  const studentPromotion = normalizeAcademicValue(student?.promotion || '');
+
+  if (requiredFaculty && studentFaculty !== requiredFaculty) return false;
+  if (requiredPromotion && studentPromotion !== requiredPromotion) return false;
+  return true;
+}
+
+function assignmentTypeLabel(type) {
+  return type === 'devoir' ? 'devoir' : type === 'examen' ? 'examen' : 'interrogation';
+}
+
+function teacherAssignmentTargetedStudents(assignment) {
+  return users.filter((user) => user.role === 'student' && studentMatchesAssignment(user, assignment));
+}
+
 function studentAssignment(assignment, studentId) {
-  return { ...publicAssignment(assignment), studentStatus: assignmentStatusForStudent(assignment, studentId) };
+  const student = users.find((user) => user.id === studentId);
+  const status = assignmentStatusForStudent(assignment, studentId);
+  return {
+    ...publicAssignment(assignment),
+    studentStatus: status,
+    canAccess: student ? studentMatchesAssignment(student, assignment) : false
+  };
 }
 
 app.get('/api/health', (req, res) => {
@@ -395,28 +425,30 @@ app.get('/api/profile', authenticate, (req, res) => {
 
 app.get('/api/student/dashboard', authenticate, authorize(['student']), (req, res) => {
   const user = users.find((item) => item.id === req.user.id);
+  const eligibleAssignments = assignments.filter((item) => item.status === 'published' && user && studentMatchesAssignment(user, item));
 
   res.json({
     user: { fullName: user.fullName, email: user.email, matricule: user.matricule, promotion: user.promotion, faculte: user.faculte || user.filiere, filiere: user.filiere, classe: user.classe, sexe: user.sexe },
     dashboard: {
       courses: [],
-      assignments: assignments.filter((item) => item.status === 'published').map((item) => studentAssignment(item, req.user.id))
+      assignments: eligibleAssignments.map((item) => studentAssignment(item, req.user.id))
     }
   });
 });
 
 app.get('/api/assignments', authenticate, (req, res) => {
   if (req.user.role === 'student') {
-    return res.json({ assignments: assignments.filter((item) => item.status === 'published').map((item) => studentAssignment(item, req.user.id)) });
+    const user = users.find((item) => item.id === req.user.id);
+    return res.json({ assignments: assignments.filter((item) => item.status === 'published' && studentMatchesAssignment(user, item)).map((item) => studentAssignment(item, req.user.id)) });
   }
 
   return res.json({ assignments: assignments.filter((item) => item.teacherId === req.user.id).map(teacherAssignment) });
 });
 
 app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) => {
-  const { title, subject, type, startAt, endAt, duration, instructions, questions } = req.body || {};
-  if (!title || !subject || !instructions || !assignmentTypes.has(type) || !startAt || !endAt || !Array.isArray(questions) || !questions.length) {
-    return res.status(400).json({ message: 'Les informations et les questions de l’évaluation sont obligatoires.' });
+  const { title, subject, type, faculty, promotion, startAt, endAt, duration, instructions, questions } = req.body || {};
+  if (!title || !instructions || !assignmentTypes.has(type) || !faculty || !promotion || !startAt || !endAt || !Array.isArray(questions) || !questions.length) {
+    return res.status(400).json({ message: 'Les informations, la faculté, la promotion et les questions de l’évaluation sont obligatoires.' });
   }
 
   const start = parseStudyRoomDate(startAt);
@@ -446,9 +478,11 @@ app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) =>
   const assignment = {
     id: nextId(assignments),
     title: String(title).trim(),
-    subject: String(subject).trim(),
+    subject: String(subject || title).trim(),
     instructions: String(instructions).trim(),
     type,
+    faculty: String(faculty).trim().toLowerCase(),
+    promotion: String(promotion).trim().toUpperCase(),
     teacherId: req.user.id,
     startAt: start.toISOString(),
     endAt: end.toISOString(),
@@ -459,20 +493,44 @@ app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) =>
   };
   assignments.push(assignment);
   saveAssignments();
+
+  const targetStudents = teacherAssignmentTargetedStudents(assignment);
+  const assignmentLabel = assignmentTypeLabel(assignment.type);
+
+  targetStudents.forEach((student) => {
+    notifications.push({
+      id: nextId(notifications),
+      userId: student.id,
+      title: `Nouvelle ${assignmentLabel}`,
+      message: `Une ${assignmentLabel} intitulée “${assignment.title}” a été publiée pour votre faculté et votre promotion.`,
+      date: new Date().toISOString(),
+      read: false
+    });
+  });
+  saveNotifications();
+
   return res.status(201).json({ assignment: teacherAssignment(assignment) });
 });
 
 app.get('/api/assignments/:assignmentId', authenticate, (req, res) => {
   const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
   if (!assignment || assignment.status !== 'published') return res.status(404).json({ message: 'Évaluation introuvable.' });
-  if (req.user.role === 'student') return res.json({ assignment: publicAssignment(assignment) });
+  if (req.user.role === 'student') {
+    const student = users.find((item) => item.id === req.user.id);
+    if (!student || !studentMatchesAssignment(student, assignment)) {
+      return res.status(403).json({ message: 'Vous n’êtes pas autorisé à accéder à cette évaluation.' });
+    }
+    return res.json({ assignment: publicAssignment(assignment) });
+  }
   if (req.user.role !== 'teacher' || assignment.teacherId !== req.user.id) return res.status(403).json({ message: 'Accès interdit à cette évaluation.' });
   return res.json({ assignment: teacherAssignment(assignment) });
 });
 
 app.post('/api/assignments/:assignmentId/start', authenticate, authorize(['student']), (req, res) => {
   const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
+  const student = users.find((item) => item.id === req.user.id);
   if (!assignment || assignment.status !== 'published') return res.status(404).json({ message: 'Évaluation introuvable.' });
+  if (!student || !studentMatchesAssignment(student, assignment)) return res.status(403).json({ message: 'Cette évaluation n’est pas ouverte pour votre faculté ou promotion.' });
   const now = Date.now();
   if (now < new Date(assignment.startAt).getTime()) return res.status(403).json({ message: `Cette interrogation n’est pas encore disponible. Elle sera accessible à partir de ${formatStudyRoomDate(assignment.startAt)}.` });
   if (now > new Date(assignment.endAt).getTime()) return res.status(403).json({ message: 'Le temps disponible pour cette interrogation est écoulé. L’accès est fermé.' });
@@ -527,8 +585,10 @@ app.patch('/api/assignments/:assignmentId/attempt', authenticate, authorize(['st
 
 app.post('/api/assignments/:assignmentId/submit', authenticate, authorize(['student']), (req, res) => {
   const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
+  const student = users.find((item) => item.id === req.user.id);
   const attempt = submissions.find((item) => item.assignmentId === Number(req.params.assignmentId) && item.studentId === req.user.id && item.status === 'in_progress');
   if (!assignment || !attempt) return res.status(404).json({ message: 'Tentative introuvable ou déjà soumise.' });
+  if (!student || !studentMatchesAssignment(student, assignment)) return res.status(403).json({ message: 'Cette évaluation n’est pas ouverte pour votre compte.' });
   if (Date.now() > new Date(attempt.expiresAt).getTime()) {
     attempt.status = 'expired';
     saveSubmissions();
@@ -548,7 +608,14 @@ app.post('/api/assignments/:assignmentId/submit', authenticate, authorize(['stud
   const result = { id: nextId(results), assignmentId: assignment.id, studentId: user.id, fullName: user.fullName, email: user.email, matricule: user.matricule || '', sexe: user.sexe || '', faculte: user.faculte || user.filiere || '', promotion: user.promotion || '', examTitle: assignment.title, subject: assignment.subject, type: assignment.type, score, maxScore, percentage, status: percentage >= 50 ? 'Réussi' : 'Échec', date: attempt.submittedAt };
   results.push(result);
   saveResults();
-  notifications.push({ id: nextId(notifications), userId: user.id, title: 'Résultats disponibles', message: `Votre résultat pour ${assignment.title} est disponible.`, date: attempt.submittedAt, read: false });
+  notifications.push({
+    id: nextId(notifications),
+    userId: user.id,
+    title: `Résultat de la ${assignmentTypeLabel(assignment.type)}`,
+    message: `Votre résultat de la ${assignmentTypeLabel(assignment.type)} “${assignment.title}” est maintenant disponible.`,
+    date: attempt.submittedAt,
+    read: false
+  });
   saveNotifications();
   return res.status(201).json({ result: studentResult(result) });
 });
@@ -625,8 +692,8 @@ app.delete('/api/admin/students/:id', authenticate, authorize(['admin']), (req, 
     return res.status(404).json({ message: 'Étudiant introuvable.' });
   }
 
-  if (!isUserActive(student)) {
-    return res.status(410).json({ message: 'Ce compte étudiant a déjà été supprimé.' });
+  if (student.isActive === false || student.deletedAt) {
+    return res.status(409).json({ message: 'Ce compte étudiant est déjà désactivé.' });
   }
 
   student.isActive = false;
@@ -634,8 +701,33 @@ app.delete('/api/admin/students/:id', authenticate, authorize(['admin']), (req, 
   saveUsers();
 
   return res.json({
-    message: 'Compte étudiant supprimé avec succès.',
-    student: serializeUser(student)
+    message: 'Compte étudiant désactivé avec succès.',
+    student: {
+      id: student.id,
+      fullName: student.fullName,
+      email: student.email,
+      isActive: student.isActive,
+      deletedAt: student.deletedAt
+    }
+  });
+});
+
+app.delete('/api/assignments/:assignmentId', authenticate, authorize(['teacher']), (req, res) => {
+  const assignmentId = Number(req.params.assignmentId);
+  const assignmentIndex = assignments.findIndex((item) => item.id === assignmentId && item.teacherId === req.user.id);
+
+  if (assignmentIndex === -1) {
+    return res.status(404).json({ message: 'Ce travail est introuvable ou ne vous appartient pas.' });
+  }
+
+  const [deletedAssignment] = assignments.splice(assignmentIndex, 1);
+  submissions.splice(0, submissions.length, ...submissions.filter((entry) => entry.assignmentId !== assignmentId));
+  saveAssignments();
+  saveSubmissions();
+
+  return res.json({
+    message: 'Travail supprimé avec succès.',
+    assignment: { id: deletedAssignment.id, title: deletedAssignment.title, type: deletedAssignment.type }
   });
 });
 

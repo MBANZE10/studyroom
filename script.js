@@ -230,6 +230,27 @@ function showOnly(viewName) {
   quizPanel.classList.toggle('hidden', true);
 }
 
+function animateHeroTitle() {
+  const title = document.getElementById('heroTitleText');
+  if (!title) return;
+
+  const fullText = 'StudyRoom';
+  let index = 0;
+  const tick = () => {
+    title.textContent = fullText.slice(0, index + 1);
+    index += 1;
+    if (index < fullText.length) {
+      setTimeout(tick, 120);
+    } else {
+      setTimeout(() => {
+        title.textContent = fullText;
+      }, 550);
+    }
+  };
+
+  tick();
+}
+
 function goHome() {
   closeLogin();
   closeRegister();
@@ -346,8 +367,12 @@ function logout() {
   state.teacherData = null;
   state.adminUsers = [];
   state.teacherResults = [];
+  state.currentExam = null;
+  state.examExpired = false;
+  unlockQuizSession();
   localStorage.removeItem('studyroom_token');
   localStorage.removeItem('studyroom_user');
+  sessionStorage.removeItem('studyroom_active_exam');
   setLoggedUser(null);
   showOnly('home');
   closeLogin();
@@ -396,10 +421,11 @@ async function loadStudentDashboard() {
       const statusLabels = { upcoming: 'À venir', available: 'Disponible', in_progress: 'En cours', ended: 'Terminée', submitted: 'Déjà soumise', expired: 'Temps écoulé' };
       const status = item.studentStatus || 'available';
       const canStart = status === 'available' || status === 'in_progress';
+      const assignmentType = item.type === 'interrogation' ? 'Interrogation' : item.type === 'examen' ? 'Examen' : 'Devoir';
       return `
         <div class="list-item">
           <h4>${escapeHtml(item.title)}</h4>
-          <p>${item.type === 'interrogation' ? 'Interrogation' : 'Devoir'} • Enseignant : ${escapeHtml(item.teacher || 'Enseignant')}</p>
+          <p>${assignmentType} • Enseignant : ${escapeHtml(item.teacher || 'Enseignant')}</p>
           <p>Début : ${formatStudyRoomDate(item.startAt)} • Fin : ${formatStudyRoomDate(item.endAt)}</p>
           <p>${escapeHtml(item.duration)} min • ${escapeHtml(item.questionCount || 0)} question(s) • Statut : ${escapeHtml(statusLabels[status] || status)}</p>
           ${canStart ? `<button type="button" class="secondary-button start-exam" data-assignment-id="${escapeHtml(item.id)}">${status === 'in_progress' ? 'Reprendre' : 'Commencer'}</button>` : `<strong>${status === 'submitted' ? '✓ Travail déjà soumis' : escapeHtml(statusLabels[status] || 'Accès fermé')}</strong>`}
@@ -434,9 +460,30 @@ async function loadStudentDashboard() {
     const resultsData = await resultsResponse.json();
     const studentResults = Array.isArray(resultsData.results) ? resultsData.results : [];
     document.getElementById('studentNoteCount').textContent = studentResults.length;
-    studentNotes.innerHTML = studentResults.length ? studentResults.map((result) => `
-      <div class="list-item"><h4>${result.examTitle}</h4><p>${result.type} • ${result.score}/${result.maxScore} • ${result.percentage}%</p></div>
-    `).join('') : studentNotes.innerHTML;
+    if (studentResults.length) {
+      studentNotes.innerHTML = `
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Titre</th>
+              <th>Date</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${studentResults.map((result) => `
+              <tr>
+                <td>${escapeHtml(result.type === 'interrogation' ? 'Interrogation' : result.type === 'examen' ? 'Examen' : 'Devoir')}</td>
+                <td>${escapeHtml(result.examTitle)}</td>
+                <td>${escapeHtml(new Date(result.date || Date.now()).toLocaleDateString('fr-FR'))}</td>
+                <td>${escapeHtml(`${result.score}/${result.maxScore}`)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
   } catch (error) {
     // Le dashboard principal reste visible même si les résultats ne répondent pas.
   }
@@ -500,8 +547,38 @@ async function loadTeacherDashboard() {
         <p>${Array.isArray(item.questions) ? item.questions.length : 0} question(s) • corrigé intégré</p>
         <p>Début : ${formatStudyRoomDate(item.startAt)} • Fin : ${formatStudyRoomDate(item.endAt)}</p>
         <p>Durée : ${item.duration} min</p>
+        <div class="quiz-actions">
+          <button type="button" class="secondary-button delete-assignment-btn" data-assignment-id="${item.id}">Supprimer</button>
+        </div>
       </div>
     `).join('');
+
+    teacherAssignments.querySelectorAll('.delete-assignment-btn').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const assignmentId = Number(button.dataset.assignmentId);
+        const confirmed = window.confirm('Êtes-vous sûr de vouloir supprimer ce travail ? Cette action est irréversible.');
+        if (!confirmed) return;
+
+        try {
+          const response = await fetch(`${apiBase}/api/assignments/${assignmentId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${state.token}` }
+          });
+          const data = await response.json();
+
+          if (!response.ok) {
+            showLoginMessage(data.message || 'La suppression du travail a échoué.', 'error');
+            return;
+          }
+
+          state.teacherAssignments = state.teacherAssignments.filter((item) => Number(item.id) !== assignmentId);
+          await loadTeacherDashboard();
+          showLoginMessage('Travail supprimé avec succès.', 'success');
+        } catch (error) {
+          showLoginMessage('La suppression du travail n’a pas pu être réalisée.', 'error');
+        }
+      });
+    });
   }
 
   if (!submittedResults.length) {
@@ -1451,8 +1528,9 @@ async function handleTeacherAssignment(event) {
   event.preventDefault();
 
   const title = document.getElementById('assignmentTitle').value.trim();
-  const subject = document.getElementById('assignmentSubject').value.trim();
   const type = document.getElementById('assignmentType').value;
+  const faculty = document.getElementById('assignmentFaculty').value.trim();
+  const promotion = document.getElementById('assignmentPromotion').value.trim();
   const startAtValue = document.getElementById('assignmentStartAt').value;
   const endAtValue = document.getElementById('assignmentEndAt').value;
   const duration = document.getElementById('assignmentDuration').value || '30';
@@ -1460,8 +1538,8 @@ async function handleTeacherAssignment(event) {
   const consent = document.getElementById('teacherAssignmentConsent').checked;
   const questions = window.teacherDraftQuestions || [];
 
-  if (!title || !subject || !type || !startAtValue || !endAtValue || !instructions) {
-    showLoginMessage('Veuillez remplir le titre, la matière, les dates et les instructions.', 'error');
+  if (!title || !type || !faculty || !promotion || !startAtValue || !endAtValue || !instructions) {
+    showLoginMessage('Veuillez remplir le titre, le type, la faculté, la promotion, les dates et les instructions.', 'error');
     return;
   }
 
@@ -1493,8 +1571,10 @@ async function handleTeacherAssignment(event) {
 
   const assignment = {
     title,
-    subject,
+    subject: title,
     type,
+    faculty,
+    promotion,
     startAt: startAtValue,
     endAt: endAtValue,
     duration,
@@ -1588,6 +1668,7 @@ async function restoreSession() {
 
 window.teacherDraftQuestions = [createEmptyQuestionCard()];
 renderQuestionBuilder();
+animateHeroTitle();
 showOnly('home');
 setLoggedUser(null);
 restoreSession();
