@@ -27,7 +27,7 @@ const {
   saveResults,
   sortResultsByStudentName
 } = require('./backend/src/config/db');
-const { createToken, verifyPassword, generateTemporaryPassword } = require('./backend/src/utils/auth');
+const { createToken, verifyPassword, generateTemporaryPassword, revokeToken } = require('./backend/src/utils/auth');
 const { authenticate, authorize } = require('./backend/src/middleware/authMiddleware');
 
 app.use(cors({
@@ -420,6 +420,19 @@ app.post('/api/auth/forgot-password', (req, res) => {
     message: 'Un mot de passe temporaire a été envoyé à votre adresse e-mail.',
     tempPassword,
     emailPreview: emailMessage
+  });
+});
+
+app.post('/api/auth/logout', authenticate, (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
+  if (token) {
+    revokeToken(token);
+  }
+
+  return res.status(200).json({
+    message: 'Déconnexion réussie. La session a été invalidée.'
   });
 });
 

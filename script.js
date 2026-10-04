@@ -404,6 +404,17 @@ async function handleLogin(event) {
 }
 
 function logout() {
+  const currentToken = state.token;
+
+  if (currentToken) {
+    fetch(`${apiBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${currentToken}` }
+    }).catch(() => {
+      // L’invalidation du token est tentée côté serveur, puis le client nettoie localement la session.
+    });
+  }
+
   state.token = '';
   state.user = null;
   state.studentData = null;
