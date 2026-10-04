@@ -332,34 +332,44 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/auth/register', (req, res) => {
-  const { fullName, email, password, sexe, matricule, promotion, faculte, filiere } = req.body;
+  const { nom, postnom, prenom, fullName, email, password, sexe, matricule, promotion, faculte, filiere, classe, groupe } = req.body || {};
 
-  if (!fullName || !email || !password || !matricule || !sexe || !faculte || !promotion) {
-    return res.status(400).json({ message: 'Nom complet, matricule, sexe, faculté, promotion, email et mot de passe sont requis.' });
+  const derivedFullName = [nom, postnom, prenom].filter((value) => String(value || '').trim()).join(' ') || String(fullName || '').trim();
+  const finalEmail = String(email || '').trim();
+  const finalPassword = String(password || '');
+  const finalFaculte = String(faculte || filiere || '').trim();
+  const finalClasse = String(classe || groupe || '').trim();
+
+  if (!derivedFullName || !finalEmail || !finalPassword || !matricule || !sexe || !finalFaculte || !promotion) {
+    return res.status(400).json({ message: 'Nom, postnom, prénom, matricule, sexe, faculté, promotion, email et mot de passe sont requis.' });
   }
 
-  if (password.length < 4) {
+  if (finalPassword.length < 4) {
     return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 4 caractères.' });
   }
 
-  if (users.some((item) => item.email.toLowerCase() === String(email).trim().toLowerCase())) {
+  if (users.some((item) => item.email.toLowerCase() === finalEmail.toLowerCase())) {
     return res.status(409).json({ message: 'Un compte avec cet email existe déjà.' });
   }
 
   const newUser = createUserRecord({
-    fullName,
-    email,
-    password,
+    fullName: derivedFullName,
+    email: finalEmail,
+    password: finalPassword,
     role: 'student',
     sexe,
     matricule,
     promotion,
-    filiere: faculte || filiere,
-    faculte
+    filiere: finalFaculte,
+    faculte: finalFaculte,
+    classe: finalClasse || null
   });
+
+  const token = createToken(newUser);
 
   return res.status(201).json({
     message: 'Compte créé avec succès.',
+    token,
     user: serializeUser(newUser)
   });
 });
@@ -447,9 +457,12 @@ app.get('/api/assignments', authenticate, (req, res) => {
 
 app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) => {
   const { title, subject, type, faculty, promotion, startAt, endAt, duration, instructions, questions } = req.body || {};
-  if (!title || !instructions || !assignmentTypes.has(type) || !faculty || !promotion || !startAt || !endAt || !Array.isArray(questions) || !questions.length) {
-    return res.status(400).json({ message: 'Les informations, la faculté, la promotion et les questions de l’évaluation sont obligatoires.' });
+  if (!title || !instructions || !assignmentTypes.has(type) || !startAt || !endAt || !Array.isArray(questions) || !questions.length) {
+    return res.status(400).json({ message: 'Les informations, les dates et les questions de l’évaluation sont obligatoires.' });
   }
+
+  const normalizedFaculty = String(faculty || '').trim().toLowerCase();
+  const normalizedPromotion = String(promotion || '').trim().toUpperCase();
 
   const start = parseStudyRoomDate(startAt);
   const end = parseStudyRoomDate(endAt);
@@ -481,8 +494,8 @@ app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) =>
     subject: String(subject || title).trim(),
     instructions: String(instructions).trim(),
     type,
-    faculty: String(faculty).trim().toLowerCase(),
-    promotion: String(promotion).trim().toUpperCase(),
+    faculty: normalizedFaculty,
+    promotion: normalizedPromotion,
     teacherId: req.user.id,
     startAt: start.toISOString(),
     endAt: end.toISOString(),

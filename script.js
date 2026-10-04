@@ -269,19 +269,39 @@ function setLoggedUser(user) {
   syncResultActions();
 }
 
+function showStudentWelcomeToast(firstName) {
+  const previousToast = document.getElementById('studentWelcomeToast');
+  if (previousToast) previousToast.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'studentWelcomeToast';
+  toast.className = 'student-welcome-toast';
+  toast.textContent = `Bienvenue, ${firstName} ! Votre compte étudiant a été créé avec succès.`;
+  document.body.appendChild(toast);
+
+  window.setTimeout(() => {
+    toast.classList.add('is-hidden');
+    window.setTimeout(() => toast.remove(), 260);
+  }, 3200);
+}
+
 async function handleRegister(event) {
   event.preventDefault();
 
-  const fullName = document.getElementById('registerFullName').value.trim();
+  const nom = document.getElementById('registerNom').value.trim();
+  const postnom = document.getElementById('registerPostnom').value.trim();
+  const prenom = document.getElementById('registerPrenom').value.trim();
   const email = document.getElementById('registerEmail').value.trim();
   const password = document.getElementById('registerPassword').value.trim();
   const sexe = document.getElementById('registerGender').value;
   const matricule = document.getElementById('registerMatricule').value.trim();
   const faculte = document.getElementById('registerFaculte').value.trim();
   const promotion = document.getElementById('registerPromotion').value.trim();
+  const classe = document.getElementById('registerClasse').value.trim();
+  const fullName = [nom, postnom, prenom].filter(Boolean).join(' ');
 
-  if (!fullName || !email || !password || !matricule || !faculte || !promotion) {
-    showRegisterMessage('Veuillez remplir tous les champs pour créer votre compte.', 'error');
+  if (!nom || !postnom || !prenom || !email || !password || !matricule || !faculte || !promotion || !classe) {
+    showRegisterMessage('Veuillez remplir tous les champs requis pour créer votre compte.', 'error');
     return;
   }
 
@@ -289,7 +309,19 @@ async function handleRegister(event) {
     const response = await fetch(`${apiBase}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName, email, password, sexe, matricule, faculte, promotion })
+      body: JSON.stringify({
+        nom,
+        postnom,
+        prenom,
+        fullName,
+        email,
+        password,
+        sexe,
+        matricule,
+        faculte,
+        promotion,
+        classe
+      })
     });
 
     const data = await response.json();
@@ -299,9 +331,20 @@ async function handleRegister(event) {
       return;
     }
 
+    state.token = data.token;
+    state.user = data.user;
+    localStorage.setItem('studyroom_token', state.token);
+    localStorage.setItem('studyroom_user', JSON.stringify(state.user));
+    setLoggedUser(data.user);
     closeRegister();
-    showLoginMessage('Compte créé avec succès. Vous pouvez maintenant vous connecter.', 'success');
-    window.setTimeout(() => showLoginMessage('', ''), 1600);
+
+    if (data.user?.role === 'student') {
+      await loadStudentDashboard();
+      showOnly('student');
+      const firstName = (data.user.fullName || '').split(/\s+/).find(Boolean) || prenom || 'Étudiant';
+      showStudentWelcomeToast(firstName);
+      await resumeActiveStudentExam();
+    }
   } catch (error) {
     showRegisterMessage('Le serveur est inaccessible au moment de l’inscription.', 'error');
   }

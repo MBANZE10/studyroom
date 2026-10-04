@@ -398,11 +398,19 @@
       <div id="registerMessage" class="login-message" role="alert"></div>
 
       <form id="registerForm" novalidate>
-        <label for="registerFullName">Nom complet</label>
-        <input type="text" id="registerFullName" placeholder="Votre nom complet" required>
+        <div class="form-grid two-columns">
+          <div>
+            <label for="registerNom">Nom</label>
+            <input type="text" id="registerNom" placeholder="Votre nom" required>
+          </div>
+          <div>
+            <label for="registerPostnom">Postnom</label>
+            <input type="text" id="registerPostnom" placeholder="Votre postnom" required>
+          </div>
+        </div>
 
-        <label for="registerMatricule">Matricule</label>
-        <input type="text" id="registerMatricule" placeholder="Votre matricule" required>
+        <label for="registerPrenom">Prénom</label>
+        <input type="text" id="registerPrenom" placeholder="Votre prénom" required>
 
         <label for="registerGender">Sexe</label>
         <select id="registerGender">
@@ -410,17 +418,23 @@
           <option value="F">Féminin</option>
         </select>
 
+        <label for="registerEmail">Adresse e-mail</label>
+        <input type="email" id="registerEmail" placeholder="exemple@email.com" required>
+
+        <label for="registerPassword">Mot de passe</label>
+        <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe" required>
+
+        <label for="registerMatricule">Matricule</label>
+        <input type="text" id="registerMatricule" placeholder="Votre matricule" required>
+
         <label for="registerFaculte">Faculté</label>
         <input type="text" id="registerFaculte" placeholder="Votre faculté" required>
 
         <label for="registerPromotion">Promotion</label>
         <input type="text" id="registerPromotion" placeholder="Votre promotion" required>
 
-        <label for="registerEmail">Adresse e-mail</label>
-        <input type="email" id="registerEmail" placeholder="exemple@email.com" required>
-
-        <label for="registerPassword">Mot de passe</label>
-        <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe" required>
+        <label for="registerClasse">Classe / Groupe</label>
+        <input type="text" id="registerClasse" placeholder="Votre classe ou groupe" required>
 
         <button type="submit" class="main-button">Créer mon compte</button>
         <button type="button" class="ghost-button register-link" data-home-return>← Retour à l'accueil</button>

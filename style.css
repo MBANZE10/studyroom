@@ -189,18 +189,40 @@ button {
   color: #2563eb;
   white-space: nowrap;
   overflow: hidden;
-  border-right: 3px solid #2563eb;
   width: 100%;
-  animation: typing 3.2s steps(12, end), blink 0.7s step-end infinite alternate;
+  animation: studyroomReveal 1.2s ease-out;
 }
 
-@keyframes typing {
-  from { width: 0; }
-  to { width: 100%; }
+@keyframes studyroomReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-@keyframes blink {
-  50% { border-color: transparent; }
+.student-welcome-toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  max-width: min(420px, calc(100vw - 30px));
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.96);
+  color: #f8fafc;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  z-index: 2000;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.student-welcome-toast.is-hidden {
+  opacity: 0;
+  transform: translateY(10px);
 }
 
 .description {
