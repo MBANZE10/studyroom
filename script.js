@@ -297,10 +297,9 @@ async function handleRegister(event) {
   const matricule = document.getElementById('registerMatricule').value.trim();
   const faculte = document.getElementById('registerFaculte').value.trim();
   const promotion = document.getElementById('registerPromotion').value.trim();
-  const classe = document.getElementById('registerClasse').value.trim();
   const fullName = [nom, postnom, prenom].filter(Boolean).join(' ');
 
-  if (!nom || !postnom || !prenom || !email || !password || !matricule || !faculte || !promotion || !classe) {
+  if (!nom || !postnom || !prenom || !email || !password || !matricule || !faculte || !promotion) {
     showRegisterMessage('Veuillez remplir tous les champs requis pour créer votre compte.', 'error');
     return;
   }
@@ -760,7 +759,6 @@ async function handleAdminCreateUser(event) {
   const matricule = document.getElementById('adminMatricule').value.trim();
   const promotion = document.getElementById('adminPromotion').value.trim();
   const filiere = document.getElementById('adminFiliere').value.trim();
-  const classe = document.getElementById('adminClasse').value.trim();
   const specialite = document.getElementById('adminSpecialite').value.trim();
 
   if (!fullName || !email || !password || !role) {
@@ -775,7 +773,7 @@ async function handleAdminCreateUser(event) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${state.token}`
       },
-      body: JSON.stringify({ fullName, email, password, role, sexe, matricule, promotion, filiere, classe, specialite })
+      body: JSON.stringify({ fullName, email, password, role, sexe, matricule, promotion, filiere, specialite })
     });
 
     const data = await response.json();

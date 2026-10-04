@@ -332,13 +332,12 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/auth/register', (req, res) => {
-  const { nom, postnom, prenom, fullName, email, password, sexe, matricule, promotion, faculte, filiere, classe, groupe } = req.body || {};
+  const { nom, postnom, prenom, fullName, email, password, sexe, matricule, promotion, faculte, filiere } = req.body || {};
 
   const derivedFullName = [nom, postnom, prenom].filter((value) => String(value || '').trim()).join(' ') || String(fullName || '').trim();
   const finalEmail = String(email || '').trim();
   const finalPassword = String(password || '');
   const finalFaculte = String(faculte || filiere || '').trim();
-  const finalClasse = String(classe || groupe || '').trim();
 
   if (!derivedFullName || !finalEmail || !finalPassword || !matricule || !sexe || !finalFaculte || !promotion) {
     return res.status(400).json({ message: 'Nom, postnom, prénom, matricule, sexe, faculté, promotion, email et mot de passe sont requis.' });
@@ -361,8 +360,7 @@ app.post('/api/auth/register', (req, res) => {
     matricule,
     promotion,
     filiere: finalFaculte,
-    faculte: finalFaculte,
-    classe: finalClasse || null
+    faculte: finalFaculte
   });
 
   const token = createToken(newUser);
