@@ -261,6 +261,36 @@ function goHome() {
   showOnly('home');
 }
 
+async function showUserDashboard(user) {
+  if (user.role === 'student') {
+    await loadStudentDashboard();
+    showOnly('student');
+    await resumeActiveStudentExam();
+  } else if (user.role === 'teacher') {
+    await loadTeacherDashboard();
+    showOnly('teacher');
+  } else if (user.role === 'admin') {
+    await loadAdminDashboard();
+    showOnly('admin');
+  } else {
+    showOnly('home');
+  }
+}
+
+async function accessStudyRoom() {
+  if (!state.token || !state.user) {
+    openLogin();
+    return;
+  }
+
+  try {
+    await showUserDashboard(state.user);
+  } catch (error) {
+    logout();
+    openLogin();
+  }
+}
+
 function setLoggedUser(user) {
   state.user = user;
   userLabel.textContent = user ? user.fullName : '';
@@ -318,8 +348,7 @@ async function handleRegister(event) {
         sexe,
         matricule,
         faculte,
-        promotion,
-        classe
+        promotion
       })
     });
 
@@ -1671,7 +1700,7 @@ document.querySelectorAll('[data-home-return]').forEach((button) => {
   button.addEventListener('click', goHome);
 });
 openLoginBtn.addEventListener('click', openLogin);
-accessBtn.addEventListener('click', openLogin);
+accessBtn.addEventListener('click', accessStudyRoom);
 closeLoginModal.addEventListener('click', closeLogin);
 closeRegisterModal.addEventListener('click', closeRegister);
 closeAdminCreateModal.addEventListener('click', closeAdminCreateModalWindow);
@@ -1702,17 +1731,7 @@ async function restoreSession() {
     state.token = savedToken;
     state.user = JSON.parse(savedUser);
     setLoggedUser(state.user);
-    if (state.user.role === 'student') {
-      await loadStudentDashboard();
-      showOnly('student');
-      await resumeActiveStudentExam();
-    } else if (state.user.role === 'teacher') {
-      await loadTeacherDashboard();
-      showOnly('teacher');
-    } else if (state.user.role === 'admin') {
-      await loadAdminDashboard();
-      showOnly('admin');
-    }
+    await showUserDashboard(state.user);
   } catch (error) {
     logout();
   }
