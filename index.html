@@ -10,53 +10,116 @@
 
 <body>
   <header class="header">
-    <div class="logo">Study<span>Room</span></div>
+    <div class="logo" aria-label="StudyRoom">Study<span>Room</span></div>
     <div class="header-actions">
+      <div id="networkStatus" class="network-status">Connexion en cours...</div>
+      <button id="themeToggle" class="icon-button" type="button" aria-label="Basculer le thème">☾</button>
       <span id="userLabel" class="user-label hidden"></span>
+      <button id="studentMenuToggle" class="icon-button student-menu-toggle hidden" type="button" aria-label="Ouvrir le menu étudiant">☰</button>
       <button id="openLoginBtn" class="login-button" type="button">Se connecter</button>
       <button id="logoutBtn" class="logout-button hidden" type="button">Déconnexion</button>
     </div>
   </header>
 
+  <div id="studentMenuBackdrop" class="student-menu-backdrop hidden"></div>
+  <aside id="studentMenuPanel" class="student-menu-panel hidden" aria-label="Menu étudiant" aria-hidden="true">
+    <div class="student-menu-header">
+      <span>☰ Menu</span>
+      <button id="closeStudentMenu" class="icon-button close-menu-button" type="button" aria-label="Fermer le menu">×</button>
+    </div>
+    <nav class="student-menu-nav" aria-label="Navigation de l’étudiant">
+      <button class="student-menu-item active" type="button" data-student-menu="dashboard">Tableau de bord</button>
+      <button class="student-menu-item" type="button" data-student-menu="devoirs">Mes devoirs</button>
+      <button class="student-menu-item" type="button" data-student-menu="interrogations">Mes interrogations</button>
+      <button class="student-menu-item" type="button" data-student-menu="examens">Mes examens</button>
+      <button class="student-menu-item" type="button" data-student-menu="resultats">Mes résultats</button>
+      <button class="student-menu-item" type="button" data-student-menu="notifications">Notifications</button>
+      <button class="student-menu-item" type="button" data-student-menu="profil">Mon profil</button>
+      <button class="student-menu-item" type="button" data-student-menu="parametres">Paramètres</button>
+      <button class="student-menu-item danger" type="button" data-student-menu="logout">Se déconnecter</button>
+    </nav>
+  </aside>
+
   <main>
     <section id="homeView" class="home-view">
       <section class="hero">
         <div class="hero-content">
-          <p class="subtitle">PLATEFORME ESTUDIANTINE</p>
+          <p class="subtitle">PLATEFORME ÉDUCATIVE PREMIUM</p>
           <h1 class="hero-title">
             <span id="heroTitleText" aria-live="polite">StudyRoom</span>
           </h1>
           <p class="description">
-            StudyRoom permet aux étudiants et enseignants de gérer cours, devoirs, interrogations,
-            soumissions, notes et résultats depuis une même plateforme professionnelle.
+            Une plateforme académique moderne pour piloter les devoirs, les interrogations, les examens,
+            les résultats et le suivi pédagogique dans un environnement premium, clair et sécurisé.
           </p>
-          <button id="accessBtn" class="main-button" type="button">Accéder à StudyRoom</button>
+          <div class="hero-actions">
+            <button id="accessBtn" class="main-button" type="button">Se connecter</button>
+            <button id="homeRegisterBtn" class="secondary-button hero-secondary" type="button">Créer un compte</button>
+          </div>
+          <ul class="hero-points" aria-label="Points forts de StudyRoom">
+            <li>Évaluations structurées</li>
+            <li>Suivi des résultats</li>
+            <li>Expérience mobile fluide</li>
+          </ul>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="visual-shell">
+            <div class="visual-topbar">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="visual-panel">
+              <div class="metric-card primary">
+                <span>Note moyenne</span>
+                <strong>94%</strong>
+              </div>
+              <div class="metric-card">
+                <span>Réponses</span>
+                <strong>1 248</strong>
+              </div>
+              <div class="progress-ring">
+                <div class="ring-center">
+                  <strong>12</strong>
+                  <small>cours</small>
+                </div>
+              </div>
+            </div>
+            <div class="visual-footer">
+              <div>
+                <small>Suivi du semestre</small>
+                <strong>Analyse des résultats</strong>
+              </div>
+              <span class="status-pill">En ligne</span>
+            </div>
+          </div>
         </div>
       </section>
 
       <section class="features">
         <div class="section-header">
           <p>STUDYROOM</p>
-          <h2>Tout votre parcours au même endroit</h2>
+          <h2>Une expérience d’apprentissage professionnelle</h2>
         </div>
 
         <div class="cards">
           <article class="card">
             <div class="icon">📝</div>
             <h3>Interrogations en ligne</h3>
-            <p>Passez vos tests directement en ligne avec suivi du temps et résultats immédiats.</p>
+            <p>Créez, publiez et suivez des évaluations avec un cadre clair et une pédagogie structurée.</p>
           </article>
 
           <article class="card">
             <div class="icon">📚</div>
-            <h3>Devoirs</h3>
-            <p>Publiez ou recevez des travaux, des consignes, des délais et des corrections.</p>
+            <h3>Devoirs & examens</h3>
+            <p>Organisez les évaluations, respectez les délais et centralisez les livrables étudiants.</p>
           </article>
 
           <article class="card">
             <div class="icon">📊</div>
-            <h3>Mes notes</h3>
-            <p>Consultez les notes validées, l'historique et les résultats par matière.</p>
+            <h3>Résultats & suivi</h3>
+            <p>Consultez les performances, la progression et les retours de manière rapide et fiable.</p>
           </article>
         </div>
       </section>

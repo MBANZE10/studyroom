@@ -117,6 +117,13 @@ const quizTimer = document.getElementById('quizTimer');
 const prevBtn = document.getElementById('prevBtn');
 const nextBtn = document.getElementById('nextBtn');
 const leaveQuizBtn = document.getElementById('leaveQuizBtn');
+const homeRegisterBtn = document.getElementById('homeRegisterBtn');
+const themeToggle = document.getElementById('themeToggle');
+const studentMenuToggle = document.getElementById('studentMenuToggle');
+const studentMenuBackdrop = document.getElementById('studentMenuBackdrop');
+const studentMenuPanel = document.getElementById('studentMenuPanel');
+const closeStudentMenu = document.getElementById('closeStudentMenu');
+const networkStatus = document.getElementById('networkStatus');
 
 function openLogin() {
   loginModal.style.display = 'flex';
@@ -189,6 +196,63 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function setNetworkStatus(type, message) {
+  if (!networkStatus) return;
+  networkStatus.className = 'network-status';
+  if (type) {
+    networkStatus.classList.add(type);
+  }
+  networkStatus.textContent = message;
+}
+
+async function requestJson(url, options = {}) {
+  setNetworkStatus('pending', 'Connexion en cours...');
+
+  try {
+    const response = await fetch(url, options);
+    if (response.ok) {
+      setNetworkStatus('success', 'Connexion rétablie');
+    } else if (response.status >= 500) {
+      setNetworkStatus('error', 'Erreur serveur');
+    }
+    return response;
+  } catch (error) {
+    setNetworkStatus('error', 'Erreur réseau');
+    throw error;
+  }
+}
+
+function applyTheme(theme) {
+  const selectedTheme = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', selectedTheme);
+  localStorage.setItem('studyroom_theme', selectedTheme);
+  if (themeToggle) {
+    themeToggle.textContent = selectedTheme === 'dark' ? '☀' : '☾';
+  }
+}
+
+function toggleStudentMenu(forceOpen) {
+  if (!studentMenuPanel || !studentMenuBackdrop) return;
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : studentMenuPanel.classList.contains('hidden');
+  studentMenuPanel.classList.toggle('hidden', !shouldOpen);
+  studentMenuBackdrop.classList.toggle('hidden', !shouldOpen);
+  studentMenuPanel.setAttribute('aria-hidden', String(!shouldOpen));
+}
+
+function setStudentMenuState() {
+  const isStudent = Boolean(state.user && state.user.role === 'student');
+  if (studentMenuToggle) {
+    studentMenuToggle.classList.toggle('hidden', !isStudent);
+  }
+  if (studentMenuPanel) {
+    studentMenuPanel.classList.add('hidden');
+    studentMenuPanel.setAttribute('aria-hidden', 'true');
+  }
+  if (studentMenuBackdrop) {
+    studentMenuBackdrop.classList.add('hidden');
+  }
 }
 
 async function handleForgotPassword() {
@@ -295,7 +359,9 @@ function setLoggedUser(user) {
   state.user = user;
   userLabel.textContent = user ? user.fullName : '';
   userLabel.classList.toggle('hidden', !user);
+  openLoginBtn.classList.toggle('hidden', !!user);
   logoutBtn.classList.toggle('hidden', !user);
+  setStudentMenuState();
   syncResultActions();
 }
 
@@ -335,7 +401,7 @@ async function handleRegister(event) {
   }
 
   try {
-    const response = await fetch(`${apiBase}/api/auth/register`, {
+    const response = await requestJson(`${apiBase}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -390,7 +456,7 @@ async function handleLogin(event) {
   }
 
   try {
-    const response = await fetch(`${apiBase}/api/auth/login`, {
+    const response = await requestJson(`${apiBase}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -469,7 +535,7 @@ function syncResultActions() {
 }
 
 async function loadStudentDashboard() {
-  const response = await fetch(`${apiBase}/api/student/dashboard`, {
+  const response = await requestJson(`${apiBase}/api/student/dashboard`, {
     headers: { Authorization: `Bearer ${state.token}` }
   });
 
@@ -572,7 +638,7 @@ async function loadStudentDashboard() {
 }
 
 async function loadTeacherDashboard() {
-  const response = await fetch(`${apiBase}/api/teacher/dashboard`, {
+  const response = await requestJson(`${apiBase}/api/teacher/dashboard`, {
     headers: { Authorization: `Bearer ${state.token}` }
   });
 
@@ -1737,9 +1803,87 @@ async function restoreSession() {
   }
 }
 
+function initStudentMenu() {
+  if (!studentMenuToggle || !studentMenuBackdrop || !studentMenuPanel || !closeStudentMenu) return;
+
+  studentMenuToggle.addEventListener('click', () => toggleStudentMenu());
+  closeStudentMenu.addEventListener('click', () => toggleStudentMenu(false));
+  studentMenuBackdrop.addEventListener('click', () => toggleStudentMenu(false));
+
+  document.querySelectorAll('[data-student-menu]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = button.dataset.studentMenu;
+      toggleStudentMenu(false);
+
+      if (target === 'logout') {
+        logout();
+        return;
+      }
+
+      if (state.user && state.user.role !== 'student') {
+        return;
+      }
+
+      showOnly('student');
+      document.getElementById('studentDashboard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      if (target === 'devoirs' || target === 'interrogations' || target === 'examens') {
+        studentAssignments?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      if (target === 'resultats') {
+        studentNotes?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      if (target === 'notifications') {
+        studentNotes.innerHTML = `
+          <div class="list-item">
+            <h4>Notifications</h4>
+            <p>Vous n’avez pas encore de notification récente. Les messages importants apparaîtront ici.</p>
+          </div>
+        `;
+        studentNotes?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      if (target === 'profil') {
+        studentCourses.innerHTML = `
+          <div class="list-item">
+            <h4>Profil de l’étudiant</h4>
+            <p>${escapeHtml(state.user?.fullName || 'Étudiant')}</p>
+            <p>${escapeHtml(state.user?.email || '')}</p>
+          </div>
+        `;
+      }
+
+      if (target === 'parametres') {
+        studentSubmissions.innerHTML = `
+          <div class="list-item">
+            <h4>Paramètres</h4>
+            <p>La gestion des préférences et de sécurité de votre compte reste accessible depuis ce tableau de bord.</p>
+          </div>
+        `;
+      }
+    });
+  });
+}
+
 window.teacherDraftQuestions = [createEmptyQuestionCard()];
 renderQuestionBuilder();
 animateHeroTitle();
 showOnly('home');
 setLoggedUser(null);
+setNetworkStatus('success', 'Connexion rétablie');
+applyTheme(localStorage.getItem('studyroom_theme') || 'light');
+initStudentMenu();
+window.addEventListener('online', () => setNetworkStatus('success', 'Connexion rétablie'));
+window.addEventListener('offline', () => setNetworkStatus('error', 'Hors ligne'));
+if (homeRegisterBtn) {
+  homeRegisterBtn.addEventListener('click', openRegister);
+}
+if (themeToggle) {
+  themeToggle.addEventListener('click', () => {
+    const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(nextTheme);
+  });
+}
 restoreSession();
