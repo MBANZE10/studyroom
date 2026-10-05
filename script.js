@@ -297,22 +297,7 @@ function showOnly(viewName) {
 function animateHeroTitle() {
   const title = document.getElementById('heroTitleText');
   if (!title) return;
-
-  const fullText = 'StudyRoom';
-  let index = 0;
-  const tick = () => {
-    title.textContent = fullText.slice(0, index + 1);
-    index += 1;
-    if (index < fullText.length) {
-      setTimeout(tick, 120);
-    } else {
-      setTimeout(() => {
-        title.textContent = fullText;
-      }, 550);
-    }
-  };
-
-  tick();
+  title.textContent = 'StudyRoom';
 }
 
 function goHome() {

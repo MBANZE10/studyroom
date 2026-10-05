@@ -668,13 +668,17 @@ app.get('/api/teacher/assignments/:assignmentId/export.xlsx', authenticate, auth
 });
 
 app.get('/api/teacher/dashboard', authenticate, authorize(['teacher']), (req, res) => {
+  const studentCount = users.filter((user) => user.role === 'student' && isUserActive(user)).length;
+  const teacherAssignmentsCount = assignments.filter((assignment) => assignment.teacherId === req.user.id).length;
+  const pendingReviews = results.filter((result) => assignments.some((assignment) => assignment.id === result.assignmentId && assignment.teacherId === req.user.id)).length;
+
   res.json({
     message: 'Tableau de bord enseignant.',
     statistics: {
-      courses: 3,
-      assignments: 7,
-      pendingReviews: 4,
-      students: 42
+      courses: 0,
+      assignments: teacherAssignmentsCount,
+      pendingReviews,
+      students: studentCount
     }
   });
 });
