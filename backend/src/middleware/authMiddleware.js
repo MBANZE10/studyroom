@@ -1,4 +1,5 @@
 const { verifyToken } = require('../utils/auth');
+const { users } = require('../config/db');
 
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -12,6 +13,11 @@ function authenticate(req, res, next) {
 
   if (!decoded) {
     return res.status(401).json({ message: 'Session invalide ou expirée.' });
+  }
+
+  const user = users.find((item) => item.id === decoded.id);
+  if (!user || user.isActive === false || user.deletedAt) {
+    return res.status(401).json({ message: 'Compte désactivé ou session invalide.' });
   }
 
   req.user = decoded;

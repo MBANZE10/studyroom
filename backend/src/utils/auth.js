@@ -4,6 +4,7 @@ const crypto = require('crypto');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_key';
 const revokedTokens = new Set();
+const revokedUserIds = new Set();
 
 function createToken(user) {
   return jwt.sign(
@@ -49,10 +50,23 @@ function revokeToken(token) {
   }
 }
 
+function revokeUserTokens(userId) {
+  if (userId === null || userId === undefined) {
+    return;
+  }
+  revokedUserIds.add(Number(userId));
+}
+
 function verifyToken(token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded && decoded.jti && revokedTokens.has(decoded.jti)) {
+    if (!decoded) {
+      return null;
+    }
+    if (decoded.jti && revokedTokens.has(decoded.jti)) {
+      return null;
+    }
+    if (decoded.id !== undefined && revokedUserIds.has(Number(decoded.id))) {
       return null;
     }
     return decoded;
@@ -66,5 +80,6 @@ module.exports = {
   generateTemporaryPassword,
   verifyPassword,
   verifyToken,
-  revokeToken
+  revokeToken,
+  revokeUserTokens
 };

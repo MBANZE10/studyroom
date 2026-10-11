@@ -74,6 +74,7 @@ const adminCreateMessage = document.getElementById('adminCreateMessage');
 const loginForm = document.getElementById('loginForm');
 const registerForm = document.getElementById('registerForm');
 const openLoginBtn = document.getElementById('openLoginBtn');
+const brandHomeBtn = document.getElementById('brandHomeBtn');
 const openAdminCreateModalBtn = document.getElementById('openAdminCreateModalBtn');
 const accessBtn = document.getElementById('accessBtn');
 const closeLoginModal = document.getElementById('closeLoginModal');
@@ -239,6 +240,17 @@ function toggleStudentMenu(forceOpen) {
   studentMenuPanel.classList.toggle('hidden', !shouldOpen);
   studentMenuBackdrop.classList.toggle('hidden', !shouldOpen);
   studentMenuPanel.setAttribute('aria-hidden', String(!shouldOpen));
+}
+
+function togglePasswordVisibility(button) {
+  const fieldId = button.dataset.togglePassword;
+  const field = fieldId ? document.getElementById(fieldId) : null;
+  if (!field) return;
+
+  const shouldShow = field.type === 'password';
+  field.type = shouldShow ? 'text' : 'password';
+  button.textContent = shouldShow ? 'Masquer' : 'Afficher';
+  button.setAttribute('aria-label', shouldShow ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
 }
 
 function setStudentMenuState() {
@@ -1747,9 +1759,12 @@ window.addEventListener('visibilitychange', () => {
 });
 
 document.getElementById('addQuestionBtn').addEventListener('click', addQuestionBuilder);
-document.querySelectorAll('[data-home-return]').forEach((button) => {
-  button.addEventListener('click', goHome);
+document.querySelectorAll('[data-toggle-password]').forEach((button) => {
+  button.addEventListener('click', () => togglePasswordVisibility(button));
 });
+if (brandHomeBtn) {
+  brandHomeBtn.addEventListener('click', goHome);
+}
 openLoginBtn.addEventListener('click', openLogin);
 accessBtn.addEventListener('click', accessStudyRoom);
 closeLoginModal.addEventListener('click', closeLogin);

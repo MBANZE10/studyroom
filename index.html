@@ -10,7 +10,9 @@
 
 <body>
   <header class="header">
-    <div class="logo" aria-label="StudyRoom">Study<span>Room</span></div>
+    <button id="brandHomeBtn" class="logo-button" type="button" aria-label="Retour à l'accueil">
+      <span class="logo" aria-label="StudyRoom">Study<span>Room</span></span>
+    </button>
     <div class="header-actions">
       <div id="networkStatus" class="network-status">Connexion en cours...</div>
       <button id="themeToggle" class="icon-button" type="button" aria-label="Basculer le thème">☾</button>
@@ -49,9 +51,9 @@
             <span id="heroTitleText" aria-live="polite">StudyRoom</span>
           </h1>
           <p class="description">
-            StudyRoom est une plateforme numérique dédiée à la gestion des évaluations académiques.
-            Elle centralise l’organisation des devoirs, interrogations et examens, tout en offrant un accès
-            clair aux résultats lorsqu’ils sont disponibles.
+            L'apprentissage et les évaluations académiques, dans un espace unique.
+            StudyRoom centralise les devoirs, interrogations, examens et résultats dans un environnement
+            structuré, sécurisé et pensé pour les étudiants, enseignants et administrateurs.
           </p>
           <div class="hero-actions">
             <button id="accessBtn" class="main-button" type="button">Se connecter</button>
@@ -123,7 +125,6 @@
           <p class="subtitle">ESPACE ÉTUDIANT</p>
           <h2 id="studentTitle">Tableau de bord</h2>
         </div>
-        <button type="button" class="ghost-button home-return-button" data-home-return>← Retour à l'accueil</button>
       </div>
 
       <div class="stats-grid">
@@ -183,7 +184,6 @@
           <p class="subtitle">ESPACE ENSEIGNANT</p>
           <h2>Tableau de bord</h2>
         </div>
-        <button type="button" class="ghost-button home-return-button" data-home-return>← Retour à l'accueil</button>
       </div>
 
       <div class="stats-grid">
@@ -331,7 +331,6 @@
           <p class="subtitle">ESPACE ADMIN</p>
           <h2>Gestion des comptes</h2>
         </div>
-        <button type="button" class="ghost-button home-return-button" data-home-return>← Retour à l'accueil</button>
       </div>
 
       <div class="stats-grid">
@@ -434,12 +433,14 @@
         <input type="email" id="email" placeholder="exemple@email.com" required>
 
         <label for="password">Mot de passe</label>
-        <input type="password" id="password" placeholder="Votre mot de passe" required>
+        <div class="field-with-toggle">
+          <input type="password" id="password" placeholder="Votre mot de passe" required>
+          <button type="button" class="password-toggle" data-toggle-password="password" aria-label="Afficher le mot de passe">Afficher</button>
+        </div>
 
         <button type="button" id="forgotPasswordBtn" class="ghost-button register-link">Mot de passe oublié ?</button>
         <button type="submit" class="main-button">Se connecter</button>
         <button type="button" id="showRegisterBtn" class="ghost-button register-link">Créer un compte</button>
-        <button type="button" class="ghost-button register-link" data-home-return>← Retour à l'accueil</button>
       </form>
     </div>
   </div>
@@ -477,7 +478,10 @@
         <input type="email" id="registerEmail" placeholder="exemple@email.com" required>
 
         <label for="registerPassword">Mot de passe</label>
-        <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe" required>
+        <div class="field-with-toggle">
+          <input type="password" id="registerPassword" placeholder="Choisissez un mot de passe" required>
+          <button type="button" class="password-toggle" data-toggle-password="registerPassword" aria-label="Afficher le mot de passe">Afficher</button>
+        </div>
 
         <label for="registerMatricule">Matricule</label>
         <input type="text" id="registerMatricule" placeholder="Votre matricule" required>
@@ -489,7 +493,6 @@
         <input type="text" id="registerPromotion" placeholder="Votre promotion" required>
 
         <button type="submit" class="main-button">Créer mon compte</button>
-        <button type="button" class="ghost-button register-link" data-home-return>← Retour à l'accueil</button>
       </form>
     </div>
   </div>
@@ -532,7 +535,10 @@
 
         <label>
           Mot de passe
-          <input type="password" id="adminPassword" required>
+          <div class="field-with-toggle">
+            <input type="password" id="adminPassword" required>
+            <button type="button" class="password-toggle" data-toggle-password="adminPassword" aria-label="Afficher le mot de passe">Afficher</button>
+          </div>
         </label>
 
         <label>
@@ -556,7 +562,6 @@
         </label>
 
         <button type="submit" class="main-button small-button">Enregistrer le compte</button>
-        <button type="button" class="ghost-button register-link" data-home-return>← Retour à l'accueil</button>
       </form>
     </div>
   </div>

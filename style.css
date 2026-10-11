@@ -104,6 +104,13 @@ html[data-theme="dark"] .header {
   gap: 12px;
 }
 
+.logo-button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
 .logo {
   font-size: clamp(1.5rem, 2vw, 2rem);
   font-weight: 800;
@@ -453,9 +460,29 @@ html[data-theme="dark"] .hero-panel {
   margin-bottom: 1.6rem;
 }
 
-.home-return-button {
-  flex-shrink: 0;
-  white-space: nowrap;
+.field-with-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.field-with-toggle input {
+  width: 100%;
+  padding-right: 92px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--primary-strong);
+  border-radius: 999px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .section-header p,

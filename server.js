@@ -27,7 +27,7 @@ const {
   saveResults,
   sortResultsByStudentName
 } = require('./backend/src/config/db');
-const { createToken, verifyPassword, generateTemporaryPassword, revokeToken } = require('./backend/src/utils/auth');
+const { createToken, verifyPassword, generateTemporaryPassword, revokeToken, revokeUserTokens } = require('./backend/src/utils/auth');
 const { authenticate, authorize } = require('./backend/src/middleware/authMiddleware');
 
 app.use(cors({
@@ -726,6 +726,7 @@ app.delete('/api/admin/students/:id', authenticate, authorize(['admin']), (req, 
 
   student.isActive = false;
   student.deletedAt = new Date().toISOString();
+  revokeUserTokens(student.id);
   saveUsers();
 
   return res.json({

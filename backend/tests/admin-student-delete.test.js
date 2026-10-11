@@ -85,6 +85,12 @@ async function waitForServer() {
     assert.equal(removeResponse.status, 200, `Suppression absente ou refusée: ${removePayload.message || removeResponse.status}`);
     assert.equal(removePayload.student.isActive, false, 'Le compte étudiant doit être désactivé en soft delete.');
 
+    const staleProfile = await fetch(`http://localhost:${serverPort}/api/profile`, {
+      headers: { Authorization: `Bearer ${createdStudent.token}` }
+    });
+    const staleProfilePayload = await staleProfile.json();
+    assert.equal(staleProfile.status, 401, `Une session supprimée ne doit plus accéder au profil: ${staleProfilePayload.message || staleProfile.status}`);
+
     const listResponse = await fetch(`http://localhost:${serverPort}/api/admin/students`, {
       headers: { Authorization: `Bearer ${adminPayload.token}` }
     });
