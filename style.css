@@ -87,15 +87,21 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 78px;
+  min-height: 80px;
   padding: 0 7%;
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.04);
 }
 
 html[data-theme="dark"] .header {
-  background: rgba(9, 19, 35, 0.74);
+  background: rgba(9, 19, 35, 0.8);
+}
+
+.header-brand-wrap {
+  display: flex;
+  align-items: center;
 }
 
 .header-actions {
@@ -248,7 +254,7 @@ html[data-theme="dark"] .header {
   grid-template-columns: 1.2fr 0.8fr;
   align-items: center;
   gap: clamp(2rem, 4vw, 4rem);
-  min-height: 620px;
+  min-height: 640px;
   padding: 4rem 0 2rem;
   overflow: hidden;
 }
@@ -385,11 +391,11 @@ html[data-theme="dark"] .header {
   position: relative;
   z-index: 1;
   width: min(100%, 430px);
-  padding: 1.6rem;
-  border-radius: 26px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  padding: 1.8rem;
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(242,247,255,0.92));
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
 }
 
 html[data-theme="dark"] .hero-panel {
@@ -524,10 +530,10 @@ html[data-theme="dark"] .hero-panel {
 
 .process-step {
   padding: 2rem 1.5rem;
-  background: var(--surface-solid);
+  background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(246,249,255,0.98));
   border: 1px solid var(--border);
   border-radius: 22px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05);
 }
 
 .process-step span {
@@ -623,11 +629,11 @@ html[data-theme="dark"] .hero-panel {
 }
 
 .panel {
-  background: var(--surface-solid);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,249,255,0.96));
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 20px;
   padding: 1.5rem;
-  box-shadow: var(--shadow);
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.04);
 }
 
 .panel-header {
@@ -657,9 +663,9 @@ html[data-theme="dark"] .hero-panel {
 }
 
 .list-item {
-  background: var(--surface-soft);
+  background: linear-gradient(180deg, rgba(248,250,255,0.96), rgba(238,244,255,0.96));
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 14px 16px;
 }
 
@@ -700,9 +706,21 @@ html[data-theme="dark"] .hero-panel {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface-solid);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: rgba(255,255,255,0.9);
   color: var(--text);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.teacher-form input:focus,
+.teacher-form select:focus,
+.teacher-form textarea:focus,
+.login-box input:focus,
+.login-box select:focus,
+.admin-create-form input:focus,
+.admin-create-form select:focus {
+  border-color: rgba(36, 82, 211, 0.5);
+  box-shadow: 0 0 0 3px rgba(36, 82, 211, 0.08);
 }
 
 .table-scroll {
@@ -966,7 +984,7 @@ html[data-theme="dark"] .hero-panel {
   width: min(320px, 82vw);
   height: 100vh;
   padding: 1.2rem 1rem 1.5rem;
-  background: var(--surface-solid);
+  background: linear-gradient(180deg, rgba(255,255,255,0.99), rgba(242,247,255,0.98));
   border-left: 1px solid var(--border);
   box-shadow: -15px 0 30px rgba(15, 23, 42, 0.12);
   z-index: 40;
@@ -1043,11 +1061,11 @@ html[data-theme="dark"] .hero-panel {
   position: relative;
   width: 100%;
   max-width: 430px;
-  background: var(--surface-solid);
-  border: 1px solid var(--border);
-  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.99), rgba(245,248,255,0.98));
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 24px;
   padding: 35px 28px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.12);
   margin: auto;
 }
 
@@ -1102,6 +1120,8 @@ html[data-theme="dark"] .hero-panel {
   width: 100%;
   margin-top: 20px;
   display: block;
+  border-radius: 14px;
+  box-shadow: 0 18px 30px rgba(36, 82, 211, 0.14);
 }
 
 .close-button {
