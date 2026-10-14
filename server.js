@@ -111,6 +111,20 @@ function ensureDefaultAccounts() {
 ensureDefaultAccounts();
 
 const assignmentTypes = new Set(['interrogation', 'devoir', 'examen']);
+const allowedPromotions = ['L1', 'L2', 'L3', 'L4', 'M1', 'M2', 'Doctorat'];
+const allowedFaculties = ['Théologie', 'Droit', 'Médecine', 'Sciences informatiques', 'Économie'];
+const academicLegacyAliases = {
+  informatique: 'Sciences informatiques',
+  'science informatique': 'Sciences informatiques',
+  'sciences informatique': 'Sciences informatiques',
+  'sciences informatiques': 'Sciences informatiques',
+  sciences: 'Sciences informatiques',
+  economie: 'Économie',
+  theologie: 'Théologie',
+  droit: 'Droit',
+  medecine: 'Médecine',
+  'sciences sociales': 'Sciences informatiques'
+};
 const studyRoomTimeZone = 'Africa/Kinshasa';
 
 function nextId(items) {
@@ -262,18 +276,45 @@ function assignmentStatusForStudent(assignment, studentId) {
 }
 
 function normalizeAcademicValue(value) {
-  return String(value ?? '').trim().toLowerCase();
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function resolveAllowedAcademicValue(value, allowedValues) {
+  const normalizedValue = normalizeAcademicValue(value);
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const aliasedValue = academicLegacyAliases[normalizedValue] || null;
+  const match = allowedValues.find((allowed) => normalizeAcademicValue(allowed) === normalizedValue)
+    || (aliasedValue ? allowedValues.find((allowed) => normalizeAcademicValue(allowed) === normalizeAcademicValue(aliasedValue)) : null);
+
+  if (match) {
+    return match;
+  }
+
+  if (/^\d{4}$/.test(normalizedValue) || /^\d{4}[a-zA-Z-]*$/.test(normalizedValue)) {
+    return String(value).trim();
+  }
+
+  return null;
 }
 
 function studentMatchesAssignment(student, assignment) {
   if (!assignment) return false;
-  const requiredFaculty = normalizeAcademicValue(assignment.faculty || assignment.faculte);
-  const requiredPromotion = normalizeAcademicValue(assignment.promotion || assignment.promo || '');
-  const studentFaculty = normalizeAcademicValue(student?.faculte || student?.filiere || '');
-  const studentPromotion = normalizeAcademicValue(student?.promotion || '');
+  const requiredFaculty = resolveAllowedAcademicValue(assignment.faculty || assignment.faculte, allowedFaculties) || normalizeAcademicValue(assignment.faculty || assignment.faculte || '');
+  const requiredPromotion = resolveAllowedAcademicValue(assignment.promotion || assignment.promo || '', allowedPromotions) || normalizeAcademicValue(assignment.promotion || assignment.promo || '');
+  const studentFaculty = resolveAllowedAcademicValue(student?.faculte || student?.filiere || '', allowedFaculties) || normalizeAcademicValue(student?.faculte || student?.filiere || '');
+  const studentPromotion = resolveAllowedAcademicValue(student?.promotion || '', allowedPromotions) || normalizeAcademicValue(student?.promotion || '');
 
-  if (requiredFaculty && studentFaculty !== requiredFaculty) return false;
-  if (requiredPromotion && studentPromotion !== requiredPromotion) return false;
+  if (requiredFaculty && studentFaculty !== normalizeAcademicValue(requiredFaculty)) return false;
+  if (requiredPromotion && studentPromotion !== normalizeAcademicValue(requiredPromotion)) return false;
   return true;
 }
 
@@ -326,9 +367,10 @@ app.post('/api/auth/register', (req, res) => {
   const derivedFullName = [nom, postnom, prenom].filter((value) => String(value || '').trim()).join(' ') || String(fullName || '').trim();
   const finalEmail = String(email || '').trim();
   const finalPassword = String(password || '');
-  const finalFaculte = String(faculte || filiere || '').trim();
+  const selectedFaculte = resolveAllowedAcademicValue(faculte || filiere || '', allowedFaculties);
+  const selectedPromotion = resolveAllowedAcademicValue(promotion, allowedPromotions);
 
-  if (!derivedFullName || !finalEmail || !finalPassword || !matricule || !sexe || !finalFaculte || !promotion) {
+  if (!derivedFullName || !finalEmail || !finalPassword || !matricule || !sexe || !selectedFaculte || !selectedPromotion) {
     return res.status(400).json({ message: 'Nom, postnom, prénom, matricule, sexe, faculté, promotion, email et mot de passe sont requis.' });
   }
 
@@ -351,9 +393,9 @@ app.post('/api/auth/register', (req, res) => {
     role: 'student',
     sexe,
     matricule,
-    promotion,
-    filiere: finalFaculte,
-    faculte: finalFaculte
+    promotion: selectedPromotion,
+    filiere: selectedFaculte,
+    faculte: selectedFaculte
   });
 
   const token = createToken(newUser);
@@ -473,9 +515,17 @@ app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) =>
     return res.status(400).json({ message: 'Le titre de l’évaluation est invalide.' });
   }
 
-  const normalizedFaculty = String(faculty || '').trim().toLowerCase();
-  const normalizedPromotion = String(promotion || '').trim().toUpperCase();
+  const normalizedFaculty = faculty ? resolveAllowedAcademicValue(faculty, allowedFaculties) : null;
+  const normalizedPromotion = promotion ? resolveAllowedAcademicValue(promotion, allowedPromotions) : null;
   const normalizedInstructions = String(instructions).trim();
+
+  if (faculty && !normalizedFaculty) {
+    return res.status(400).json({ message: 'La faculté ciblée doit être choisie parmi les valeurs autorisées.' });
+  }
+
+  if (promotion && !normalizedPromotion) {
+    return res.status(400).json({ message: 'La promotion ciblée doit être choisie parmi les valeurs autorisées.' });
+  }
 
   const start = parseStudyRoomDate(startAt);
   const end = parseStudyRoomDate(endAt);
@@ -778,6 +828,13 @@ app.post('/api/admin/users', authenticate, authorize(['admin']), (req, res) => {
     return res.status(409).json({ message: 'Cet utilisateur existe déjà.' });
   }
 
+  const selectedPromotion = allowedRole === 'student' ? resolveAllowedAcademicValue(promotion, allowedPromotions) : null;
+  const selectedFaculty = allowedRole === 'student' ? resolveAllowedAcademicValue(filiere || '', allowedFaculties) : null;
+
+  if (allowedRole === 'student' && (!selectedPromotion || !selectedFaculty)) {
+    return res.status(400).json({ message: 'La promotion et la faculté de l’étudiant doivent être choisies parmi les valeurs autorisées.' });
+  }
+
   const newUser = createUserRecord({
     fullName,
     email,
@@ -785,8 +842,8 @@ app.post('/api/admin/users', authenticate, authorize(['admin']), (req, res) => {
     role: allowedRole,
     sexe,
     matricule,
-    promotion,
-    filiere,
+    promotion: selectedPromotion || promotion,
+    filiere: selectedFaculty || filiere,
     classe,
     specialite
   });

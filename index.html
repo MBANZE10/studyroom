@@ -226,26 +226,28 @@
             </label>
 
             <label>
-              Faculté concernée
+              Faculté ciblée
               <select id="assignmentFaculty" required>
                 <option value="">Choisir la faculté</option>
-                <option value="informatique">Informatique</option>
-                <option value="droit">Droit</option>
-                <option value="medecine">Médecine</option>
-                <option value="economie">Économie</option>
-                <option value="sciences sociales">Sciences sociales</option>
+                <option value="Théologie">Théologie</option>
+                <option value="Droit">Droit</option>
+                <option value="Médecine">Médecine</option>
+                <option value="Sciences informatiques">Sciences informatiques</option>
+                <option value="Économie">Économie</option>
               </select>
             </label>
 
             <label>
-              Promotion concernée
+              Promotion ciblée
               <select id="assignmentPromotion" required>
                 <option value="">Choisir la promotion</option>
                 <option value="L1">L1</option>
                 <option value="L2">L2</option>
                 <option value="L3">L3</option>
+                <option value="L4">L4</option>
                 <option value="M1">M1</option>
                 <option value="M2">M2</option>
+                <option value="Doctorat">Doctorat</option>
               </select>
             </label>
 
@@ -489,10 +491,26 @@
         <input type="text" id="registerMatricule" placeholder="Votre matricule" required>
 
         <label for="registerFaculte">Faculté</label>
-        <input type="text" id="registerFaculte" placeholder="Votre faculté" required>
+        <select id="registerFaculte" required>
+          <option value="">Choisir votre faculté</option>
+          <option value="Théologie">Théologie</option>
+          <option value="Droit">Droit</option>
+          <option value="Médecine">Médecine</option>
+          <option value="Sciences informatiques">Sciences informatiques</option>
+          <option value="Économie">Économie</option>
+        </select>
 
         <label for="registerPromotion">Promotion</label>
-        <input type="text" id="registerPromotion" placeholder="Votre promotion" required>
+        <select id="registerPromotion" required>
+          <option value="">Choisir votre promotion</option>
+          <option value="L1">L1</option>
+          <option value="L2">L2</option>
+          <option value="L3">L3</option>
+          <option value="L4">L4</option>
+          <option value="M1">M1</option>
+          <option value="M2">M2</option>
+          <option value="Doctorat">Doctorat</option>
+        </select>
 
         <button type="submit" class="main-button">Créer mon compte</button>
       </form>
@@ -550,12 +568,28 @@
 
         <label>
           Promotion
-          <input type="text" id="adminPromotion">
+          <select id="adminPromotion">
+            <option value="">Choisir la promotion</option>
+            <option value="L1">L1</option>
+            <option value="L2">L2</option>
+            <option value="L3">L3</option>
+            <option value="L4">L4</option>
+            <option value="M1">M1</option>
+            <option value="M2">M2</option>
+            <option value="Doctorat">Doctorat</option>
+          </select>
         </label>
 
         <label>
-          Filière
-          <input type="text" id="adminFiliere">
+          Faculté
+          <select id="adminFiliere">
+            <option value="">Choisir la faculté</option>
+            <option value="Théologie">Théologie</option>
+            <option value="Droit">Droit</option>
+            <option value="Médecine">Médecine</option>
+            <option value="Sciences informatiques">Sciences informatiques</option>
+            <option value="Économie">Économie</option>
+          </select>
         </label>
 
         <label>

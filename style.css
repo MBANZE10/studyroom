@@ -795,6 +795,26 @@ html[data-theme="dark"] .hero-panel {
   font-weight: 700;
 }
 
+.question-builder-nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.question-builder-status {
+  justify-self: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.question-builder-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .question-builder-list {
   display: grid;
   gap: 14px;

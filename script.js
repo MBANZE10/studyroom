@@ -1,6 +1,51 @@
 const configuredApiBase = window.STUDYROOM_CONFIG?.apiBaseUrl;
 const apiBase = typeof configuredApiBase === 'string' ? configuredApiBase.replace(/\/$/, '') : '';
 const studyRoomTimeZone = 'Africa/Kinshasa';
+const allowedAcademicFaculties = ['Théologie', 'Droit', 'Médecine', 'Sciences informatiques', 'Économie'];
+const allowedAcademicPromotions = ['L1', 'L2', 'L3', 'L4', 'M1', 'M2', 'Doctorat'];
+const academicLegacyAliases = {
+  informatique: 'Sciences informatiques',
+  'science informatique': 'Sciences informatiques',
+  'sciences informatique': 'Sciences informatiques',
+  'sciences informatiques': 'Sciences informatiques',
+  sciences: 'Sciences informatiques',
+  economie: 'Économie',
+  theologie: 'Théologie',
+  droit: 'Droit',
+  medecine: 'Médecine',
+  'sciences sociales': 'Sciences informatiques'
+};
+
+function normalizeAcademicChoice(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function resolveAllowedAcademicChoice(value, allowedValues) {
+  const normalizedValue = normalizeAcademicChoice(value);
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const aliasedValue = academicLegacyAliases[normalizedValue] || null;
+  const matched = allowedValues.find((choice) => normalizeAcademicChoice(choice) === normalizedValue)
+    || (aliasedValue ? allowedValues.find((choice) => normalizeAcademicChoice(choice) === normalizeAcademicChoice(aliasedValue)) : null);
+
+  if (matched) {
+    return matched;
+  }
+
+  if (/^\d{4}$/.test(normalizedValue) || /^\d{4}[a-zA-Z-]*$/.test(normalizedValue)) {
+    return String(value).trim();
+  }
+
+  return null;
+}
 
 if (!apiBase) {
   throw new Error('StudyRoom: apiBaseUrl doit être configurée dans config.js.');
@@ -394,6 +439,13 @@ async function handleRegister(event) {
     return;
   }
 
+  const safeFaculty = resolveAllowedAcademicChoice(faculte, allowedAcademicFaculties);
+  const safePromotion = resolveAllowedAcademicChoice(promotion, allowedAcademicPromotions);
+  if (!safeFaculty || !safePromotion) {
+    showRegisterMessage('La faculté et la promotion doivent être choisies parmi les valeurs autorisées.', 'error');
+    return;
+  }
+
   try {
     const response = await requestJson(`${apiBase}/api/auth/register`, {
       method: 'POST',
@@ -407,8 +459,8 @@ async function handleRegister(event) {
         password,
         sexe,
         matricule,
-        faculte,
-        promotion
+        faculte: safeFaculty,
+        promotion: safePromotion
       })
     });
 
@@ -852,6 +904,11 @@ async function handleAdminCreateUser(event) {
 
   if (!fullName || !email || !password || !role) {
     showLoginMessage('Veuillez remplir tous les champs nécessaires.', 'error');
+    return;
+  }
+
+  if (role === 'student' && (!resolveAllowedAcademicChoice(promotion, allowedAcademicPromotions) || !resolveAllowedAcademicChoice(filiere, allowedAcademicFaculties))) {
+    showLoginMessage('La promotion et la faculté de l’étudiant doivent être sélectionnées parmi les valeurs autorisées.', 'error');
     return;
   }
 
@@ -1481,108 +1538,144 @@ function createEmptyQuestionCard() {
   };
 }
 
+function ensureTeacherDraftState() {
+  if (!Array.isArray(window.teacherDraftQuestions) || !window.teacherDraftQuestions.length) {
+    window.teacherDraftQuestions = [createEmptyQuestionCard()];
+  }
+
+  if (typeof window.teacherDraftQuestionIndex !== 'number' || window.teacherDraftQuestionIndex < 0) {
+    window.teacherDraftQuestionIndex = 0;
+  }
+
+  if (window.teacherDraftQuestionIndex >= window.teacherDraftQuestions.length) {
+    window.teacherDraftQuestionIndex = window.teacherDraftQuestions.length - 1;
+  }
+}
+
 function renderQuestionBuilder() {
   const container = document.getElementById('teacherQuestionsContainer');
   if (!container) return;
 
-  container.innerHTML = state.teacherAssignments.length ? '' : '';
+  ensureTeacherDraftState();
 
-  const draftQuestions = window.teacherDraftQuestions || [];
+  const draftQuestions = window.teacherDraftQuestions;
+  const currentIndex = window.teacherDraftQuestionIndex;
+  const currentQuestion = draftQuestions[currentIndex] || createEmptyQuestionCard();
+  const isOpen = currentQuestion.type === 'ouverte';
+  const isTrueFalse = currentQuestion.type === 'vrai_faux';
 
-  if (!draftQuestions.length) {
-    draftQuestions.push(createEmptyQuestionCard());
+  container.innerHTML = `
+    <div class="teacher-question-card" data-question-index="${currentIndex}">
+      <div class="teacher-question-card-header">
+        <h4>Question ${currentIndex + 1} sur ${draftQuestions.length}</h4>
+        <button type="button" class="ghost-button remove-question-btn" data-index="${currentIndex}">Supprimer</button>
+      </div>
+
+      <div class="builder-toolbar question-builder-nav">
+        <button type="button" class="secondary-button prev-question-btn" ${currentIndex === 0 ? 'disabled' : ''}>Question précédente</button>
+        <span class="question-builder-status">Question ${currentIndex + 1} sur ${draftQuestions.length}</span>
+        <button type="button" class="secondary-button next-question-btn">Question suivante</button>
+      </div>
+
+      <div class="question-builder-actions">
+        <button type="button" class="secondary-button add-question-inline-btn">Ajouter une question</button>
+      </div>
+
+      <label>
+        Type de question
+        <select class="question-type-select" data-index="${currentIndex}">
+          <option value="qcm" ${currentQuestion.type === 'qcm' ? 'selected' : ''}>Choix multiple</option>
+          <option value="vrai_faux" ${currentQuestion.type === 'vrai_faux' ? 'selected' : ''}>Vrai / Faux</option>
+          <option value="ouverte" ${currentQuestion.type === 'ouverte' ? 'selected' : ''}>Réponse courte / ouverte</option>
+        </select>
+      </label>
+
+      <label>
+        Libellé de la question
+        <textarea class="question-text-input" data-index="${currentIndex}" rows="3" placeholder="Posez ici la question...">${currentQuestion.text}</textarea>
+      </label>
+
+      ${!isOpen ? `
+        <div class="question-option-list">
+          ${currentQuestion.options.map((option, optionIndex) => `
+            <div class="question-option-row">
+              <span class="inline-label">${String.fromCharCode(65 + optionIndex)}</span>
+              <input type="text" class="question-option-input" data-question-index="${currentIndex}" data-option-index="${optionIndex}" value="${option}" placeholder="Option ${String.fromCharCode(65 + optionIndex)}">
+              ${currentQuestion.type === 'qcm' ? `<button type="button" class="ghost-button remove-option-btn" data-question-index="${currentIndex}" data-option-index="${optionIndex}" ${currentQuestion.options.length <= 2 ? 'disabled' : ''}>Supprimer</button>` : ''}
+            </div>
+          `).join('')}
+          ${currentQuestion.type === 'qcm' ? `<button type="button" class="secondary-button add-option-btn" data-index="${currentIndex}" ${currentQuestion.options.length >= 5 ? 'disabled' : ''}>Ajouter un choix</button>` : ''}
+        </div>
+      ` : ''}
+
+      ${isTrueFalse ? `
+        <div class="question-option-list">
+          <div class="question-option-row">
+            <span class="inline-label">V</span>
+            <input type="text" value="Vrai" readonly>
+          </div>
+          <div class="question-option-row">
+            <span class="inline-label">F</span>
+            <input type="text" value="Faux" readonly>
+          </div>
+        </div>
+      ` : ''}
+
+      <label>
+        Bonne réponse
+        <input type="text" class="question-answer-input" data-index="${currentIndex}" value="${currentQuestion.correctAnswer}" placeholder="HTML / Vrai / réponse attendue...">
+      </label>
+
+      <label>
+        Barème (points)
+        <input type="number" min="1" max="20" class="question-points-input" data-index="${currentIndex}" value="${currentQuestion.points}">
+      </label>
+
+      ${isOpen ? `
+        <label>
+          Éléments attendus / réponse de référence
+          <textarea class="question-expected-input" data-index="${currentIndex}" rows="4" placeholder="- notion 1\n- notion 2\n- élément attendu...">${currentQuestion.expectedAnswer}</textarea>
+        </label>
+      ` : ''}
+    </div>
+  `;
+
+  const currentQuestionCard = container.querySelector('.teacher-question-card');
+  if (currentQuestionCard) {
+    currentQuestionCard.querySelector('.prev-question-btn')?.addEventListener('click', () => {
+      if (window.teacherDraftQuestionIndex > 0) {
+        window.teacherDraftQuestionIndex -= 1;
+        renderQuestionBuilder();
+      }
+    });
+
+    currentQuestionCard.querySelector('.next-question-btn')?.addEventListener('click', () => {
+      if (window.teacherDraftQuestionIndex < window.teacherDraftQuestions.length - 1) {
+        window.teacherDraftQuestionIndex += 1;
+        renderQuestionBuilder();
+      } else {
+        addQuestionBuilder();
+      }
+    });
+
+    currentQuestionCard.querySelector('.add-question-inline-btn')?.addEventListener('click', addQuestionBuilder);
   }
 
-  window.teacherDraftQuestions = draftQuestions;
-
-  container.innerHTML = draftQuestions.map((question, questionIndex) => {
-    const isOpen = question.type === 'ouverte';
-    const isTrueFalse = question.type === 'vrai_faux';
-
-    return `
-      <div class="teacher-question-card" data-question-index="${questionIndex}">
-        <div class="teacher-question-card-header">
-          <h4>Question ${questionIndex + 1}</h4>
-          <button type="button" class="ghost-button remove-question-btn" data-index="${questionIndex}">Supprimer</button>
-        </div>
-
-        <label>
-          Type de question
-          <select class="question-type-select" data-index="${questionIndex}">
-            <option value="qcm" ${question.type === 'qcm' ? 'selected' : ''}>Choix multiple</option>
-            <option value="vrai_faux" ${question.type === 'vrai_faux' ? 'selected' : ''}>Vrai / Faux</option>
-            <option value="ouverte" ${question.type === 'ouverte' ? 'selected' : ''}>Réponse courte / ouverte</option>
-          </select>
-        </label>
-
-        <label>
-          Libellé de la question
-          <textarea class="question-text-input" data-index="${questionIndex}" rows="3" placeholder="Posez ici la question...">${question.text}</textarea>
-        </label>
-
-        ${!isOpen ? `
-          <div class="question-option-list">
-            ${question.options.map((option, optionIndex) => `
-              <div class="question-option-row">
-                <span class="inline-label">${String.fromCharCode(65 + optionIndex)}</span>
-                <input type="text" class="question-option-input" data-question-index="${questionIndex}" data-option-index="${optionIndex}" value="${option}" placeholder="Option ${String.fromCharCode(65 + optionIndex)}">
-                ${question.type === 'qcm' ? `<button type="button" class="ghost-button remove-option-btn" data-question-index="${questionIndex}" data-option-index="${optionIndex}" ${question.options.length <= 2 ? 'disabled' : ''}>Supprimer</button>` : ''}
-              </div>
-            `).join('')}
-            ${question.type === 'qcm' ? `<button type="button" class="secondary-button add-option-btn" data-index="${questionIndex}" ${question.options.length >= 5 ? 'disabled' : ''}>Ajouter un choix</button>` : ''}
-          </div>
-        ` : ''}
-
-        ${isTrueFalse ? `
-          <div class="question-option-list">
-            <div class="question-option-row">
-              <span class="inline-label">V</span>
-              <input type="text" value="Vrai" readonly>
-            </div>
-            <div class="question-option-row">
-              <span class="inline-label">F</span>
-              <input type="text" value="Faux" readonly>
-            </div>
-          </div>
-        ` : ''}
-
-        <label>
-          Bonne réponse
-          <input type="text" class="question-answer-input" data-index="${questionIndex}" value="${question.correctAnswer}" placeholder="HTML / Vrai / réponse attendue...">
-        </label>
-
-        <label>
-          Barème (points)
-          <input type="number" min="1" max="20" class="question-points-input" data-index="${questionIndex}" value="${question.points}">
-        </label>
-
-        ${isOpen ? `
-          <label>
-            Éléments attendus / réponse de référence
-            <textarea class="question-expected-input" data-index="${questionIndex}" rows="4" placeholder="- notion 1\n- notion 2\n- élément attendu...">${question.expectedAnswer}</textarea>
-          </label>
-        ` : ''}
-      </div>
-    `;
-  }).join('');
-
-  const typeInputs = container.querySelectorAll('.question-type-select');
-  typeInputs.forEach((input) => {
-    input.addEventListener('change', (event) => {
-      const index = Number(event.target.dataset.index);
-      const draft = window.teacherDraftQuestions[index];
-      draft.type = event.target.value;
-      if (draft.type === 'qcm' && draft.options.length < 4) {
-        draft.options = ['', '', '', ''];
-      }
-      if (draft.type === 'vrai_faux') {
-        draft.options = ['Vrai', 'Faux'];
-      }
-      if (draft.type === 'ouverte') {
-        draft.options = ['', '', '', ''];
-      }
-      renderQuestionBuilder();
-    });
+  container.querySelector('.question-type-select')?.addEventListener('change', (event) => {
+    const index = Number(event.target.dataset.index);
+    const draft = window.teacherDraftQuestions[index];
+    if (!draft) return;
+    draft.type = event.target.value;
+    if (draft.type === 'qcm' && draft.options.length < 4) {
+      draft.options = ['', '', '', ''];
+    }
+    if (draft.type === 'vrai_faux') {
+      draft.options = ['Vrai', 'Faux'];
+    }
+    if (draft.type === 'ouverte') {
+      draft.options = ['', '', '', ''];
+    }
+    renderQuestionBuilder();
   });
 
   container.querySelectorAll('.question-text-input').forEach((input) => {
@@ -1597,6 +1690,7 @@ function renderQuestionBuilder() {
       const questionIndex = Number(event.target.dataset.questionIndex);
       const optionIndex = Number(event.target.dataset.optionIndex);
       const draft = window.teacherDraftQuestions[questionIndex];
+      if (!draft) return;
       draft.options[optionIndex] = event.target.value;
     });
   });
@@ -1604,7 +1698,7 @@ function renderQuestionBuilder() {
   container.querySelectorAll('.add-option-btn').forEach((button) => {
     button.addEventListener('click', (event) => {
       const question = window.teacherDraftQuestions[Number(event.target.dataset.index)];
-      if (question.options.length < 5) {
+      if (question && question.options.length < 5) {
         question.options.push('');
         renderQuestionBuilder();
       }
@@ -1615,7 +1709,7 @@ function renderQuestionBuilder() {
     button.addEventListener('click', (event) => {
       const question = window.teacherDraftQuestions[Number(event.target.dataset.questionIndex)];
       const optionIndex = Number(event.target.dataset.optionIndex);
-      if (question.options.length > 2) {
+      if (question && question.options.length > 2) {
         question.options.splice(optionIndex, 1);
         renderQuestionBuilder();
       }
@@ -1646,11 +1740,22 @@ function renderQuestionBuilder() {
   container.querySelectorAll('.remove-question-btn').forEach((button) => {
     button.addEventListener('click', (event) => {
       const index = Number(event.target.dataset.index);
-      const draft = window.teacherDraftQuestions || [];
+      const draft = Array.isArray(window.teacherDraftQuestions) ? [...window.teacherDraftQuestions] : [];
+      const confirmed = window.confirm('Voulez-vous vraiment supprimer cette question ?');
+      if (!confirmed) {
+        return;
+      }
+
       draft.splice(index, 1);
       if (!draft.length) {
         draft.push(createEmptyQuestionCard());
+        window.teacherDraftQuestionIndex = 0;
+      } else if (index >= draft.length) {
+        window.teacherDraftQuestionIndex = draft.length - 1;
+      } else {
+        window.teacherDraftQuestionIndex = index;
       }
+
       window.teacherDraftQuestions = draft;
       renderQuestionBuilder();
     });
@@ -1658,10 +1763,13 @@ function renderQuestionBuilder() {
 }
 
 function addQuestionBuilder() {
-  if (!window.teacherDraftQuestions) {
+  if (!Array.isArray(window.teacherDraftQuestions)) {
     window.teacherDraftQuestions = [];
   }
-  window.teacherDraftQuestions.push(createEmptyQuestionCard());
+
+  const nextQuestion = createEmptyQuestionCard();
+  window.teacherDraftQuestions.push(nextQuestion);
+  window.teacherDraftQuestionIndex = window.teacherDraftQuestions.length - 1;
   renderQuestionBuilder();
 }
 
@@ -1679,8 +1787,16 @@ async function handleTeacherAssignment(event) {
   const consent = document.getElementById('teacherAssignmentConsent').checked;
   const questions = window.teacherDraftQuestions || [];
 
+  const safeFaculty = resolveAllowedAcademicChoice(faculty, allowedAcademicFaculties);
+  const safePromotion = resolveAllowedAcademicChoice(promotion, allowedAcademicPromotions);
+
   if (!title || !type || !faculty || !promotion || !startAtValue || !endAtValue || !instructions) {
     showLoginMessage('Veuillez remplir le titre, le type, la faculté, la promotion, les dates et les instructions.', 'error');
+    return;
+  }
+
+  if (!safeFaculty || !safePromotion) {
+    showLoginMessage('La faculté et la promotion doivent être choisies parmi les valeurs autorisées.', 'error');
     return;
   }
 
@@ -1714,8 +1830,8 @@ async function handleTeacherAssignment(event) {
     title,
     subject: title,
     type,
-    faculty,
-    promotion,
+    faculty: safeFaculty,
+    promotion: safePromotion,
     startAt: startAtValue,
     endAt: endAtValue,
     duration,
@@ -1865,6 +1981,7 @@ function initStudentMenu() {
 }
 
 window.teacherDraftQuestions = [createEmptyQuestionCard()];
+window.teacherDraftQuestionIndex = 0;
 renderQuestionBuilder();
 animateHeroTitle();
 showOnly('home');
