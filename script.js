@@ -580,6 +580,57 @@ function syncResultActions() {
   }
 }
 
+function renderStudentAssignments(items = state.teacherAssignments) {
+  if (!items.length) {
+    studentAssignments.innerHTML = `
+      <div class="list-item">
+        <h4>Aucun travail publié</h4>
+        <p>Les devoirs, interrogations et examens apparaîtront ici dès leur publication.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const statusLabels = { upcoming: 'À venir', available: 'Disponible', in_progress: 'En cours', ended: 'Expiré', submitted: 'Terminé', expired: 'Expiré' };
+  studentAssignments.innerHTML = items.map((item) => {
+    const status = item.studentStatus || 'available';
+    const canStart = status === 'available' || status === 'in_progress';
+    const assignmentType = item.type === 'interrogation' ? 'Interrogation' : item.type === 'examen' ? 'Examen' : 'Devoir';
+    return `
+      <div class="list-item">
+        <h4>${escapeHtml(item.title)}</h4>
+        <p>${assignmentType} • Enseignant : ${escapeHtml(item.teacher || 'Enseignant')}</p>
+        <p>${escapeHtml(item.instructions || '')}</p>
+        <p>Début : ${formatStudyRoomDate(item.startAt)} • Fin : ${formatStudyRoomDate(item.endAt)}</p>
+        <p>${escapeHtml(item.duration)} min • ${escapeHtml(item.questionCount || 0)} question(s) • Statut : ${escapeHtml(statusLabels[status] || status)}</p>
+        ${canStart ? `<button type="button" class="secondary-button start-exam" data-assignment-id="${escapeHtml(item.id)}">${status === 'in_progress' ? 'Reprendre' : 'Commencer'}</button>` : `<strong>${status === 'submitted' ? '✓ Travail déjà soumis' : escapeHtml(statusLabels[status] || 'Accès fermé')}</strong>`}
+      </div>
+    `;
+  }).join('');
+
+  studentAssignments.querySelectorAll('.start-exam').forEach((button) => {
+    button.addEventListener('click', () => startQuizFromTask(button.dataset.assignmentId));
+  });
+}
+
+async function refreshStudentAssignments() {
+  if (!state.token || state.user?.role !== 'student' || studentDashboard.classList.contains('hidden') || state.currentExam) return;
+
+  try {
+    const response = await fetch(`${apiBase}/api/student/dashboard`, {
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    state.studentData = data;
+    state.teacherAssignments = Array.isArray(data.dashboard?.assignments) ? data.dashboard.assignments : [];
+    document.getElementById('studentTaskCount').textContent = state.teacherAssignments.length;
+    renderStudentAssignments();
+  } catch (error) {
+    // Keep the current list visible when a background refresh is unavailable.
+  }
+}
+
 async function loadStudentDashboard() {
   const response = await requestJson(`${apiBase}/api/student/dashboard`, {
     headers: { Authorization: `Bearer ${state.token}` }
@@ -603,35 +654,7 @@ async function loadStudentDashboard() {
     </div>
   `;
 
-  if (!state.teacherAssignments.length) {
-    studentAssignments.innerHTML = `
-      <div class="list-item">
-        <h4>Aucun travail publié</h4>
-        <p>Les devoirs et interrogations apparaîtront ici dès que l’enseignant les publiera.</p>
-      </div>
-    `;
-  } else {
-    studentAssignments.innerHTML = state.teacherAssignments.map((item) => {
-      const statusLabels = { upcoming: 'À venir', available: 'Disponible', in_progress: 'En cours', ended: 'Terminée', submitted: 'Déjà soumise', expired: 'Temps écoulé' };
-      const status = item.studentStatus || 'available';
-      const canStart = status === 'available' || status === 'in_progress';
-      const assignmentType = item.type === 'interrogation' ? 'Interrogation' : item.type === 'examen' ? 'Examen' : 'Devoir';
-      return `
-        <div class="list-item">
-          <h4>${escapeHtml(item.title)}</h4>
-          <p>${assignmentType} • Enseignant : ${escapeHtml(item.teacher || 'Enseignant')}</p>
-          <p>Début : ${formatStudyRoomDate(item.startAt)} • Fin : ${formatStudyRoomDate(item.endAt)}</p>
-          <p>${escapeHtml(item.duration)} min • ${escapeHtml(item.questionCount || 0)} question(s) • Statut : ${escapeHtml(statusLabels[status] || status)}</p>
-          ${canStart ? `<button type="button" class="secondary-button start-exam" data-assignment-id="${escapeHtml(item.id)}">${status === 'in_progress' ? 'Reprendre' : 'Commencer'}</button>` : `<strong>${status === 'submitted' ? '✓ Travail déjà soumis' : escapeHtml(statusLabels[status] || 'Accès fermé')}</strong>`}
-        </div>
-      `;
-    }).join('');
-  }
-
-  const examButtons = studentAssignments.querySelectorAll('.start-exam');
-  examButtons.forEach((button) => {
-    button.addEventListener('click', () => startQuizFromTask(button.dataset.assignmentId));
-  });
+  renderStudentAssignments();
 
   studentSubmissions.innerHTML = `
     <div class="list-item">
@@ -1989,6 +2012,7 @@ setLoggedUser(null);
 setNetworkStatus('success', 'Connexion rétablie');
 applyTheme(localStorage.getItem('studyroom_theme') || 'light');
 initStudentMenu();
+window.setInterval(refreshStudentAssignments, 30000);
 window.addEventListener('online', () => setNetworkStatus('success', 'Connexion rétablie'));
 window.addEventListener('offline', () => setNetworkStatus('error', 'Hors ligne'));
 if (homeRegisterBtn) {

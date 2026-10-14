@@ -44,6 +44,24 @@ async function request(route, options = {}) {
   return { response, body };
 }
 
+async function registerStudent(suffix, faculte, promotion) {
+  const email = `evaluation.${suffix}.${Date.now()}@example.com`;
+  const registration = await request('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fullName: `Étudiant ${suffix}`, email, password: 'student123', matricule: `EVAL-${suffix}`, sexe: 'F', faculte, promotion })
+  });
+  assert.equal(registration.response.status, 201);
+  assert.equal(registration.body.user.role, 'student');
+  const login = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'student123' })
+  });
+  assert.equal(login.response.status, 200);
+  return login.body.token;
+}
+
 (async () => {
   try {
     await waitForServer();
@@ -54,23 +72,24 @@ async function request(route, options = {}) {
     });
     assert.equal(teacherLogin.response.status, 200);
 
-    const email = `evaluation.${Date.now()}@example.com`;
-    const registration = await request('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName: 'Étudiant Evaluation', email, password: 'student123', role: 'teacher', matricule: 'EVAL-1', sexe: 'F', faculte: 'Sciences', promotion: '2026' })
-    });
-    assert.equal(registration.response.status, 201);
-    assert.equal(registration.body.user.role, 'student');
-
-    const studentLogin = await request('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: 'student123' })
-    });
-    assert.equal(studentLogin.response.status, 200);
+    const studentToken = await registerStudent('l2', 'Sciences informatiques', 'L2');
+    const peerStudentToken = await registerStudent('l2-peer', 'Sciences informatiques', 'L2');
+    const otherPromotionToken = await registerStudent('l1', 'Sciences informatiques', 'L1');
+    const otherFacultyToken = await registerStudent('droit-l2', 'Droit', 'L2');
     const teacherToken = teacherLogin.body.token;
-    const studentToken = studentLogin.body.token;
+    const missingTarget = await request('/api/assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${teacherToken}` },
+      body: JSON.stringify({
+        title: 'Travail sans cible',
+        type: 'devoir',
+        startAt: new Date(Date.now() + 60000).toISOString(),
+        endAt: new Date(Date.now() + 3600000).toISOString(),
+        instructions: 'Test',
+        questions: [{ id: 1, type: 'qcm', text: 'Question ?', options: ['A', 'B'], correctAnswer: 'A', points: 1 }]
+      })
+    });
+    assert.equal(missingTarget.response.status, 400);
     const timezoneAssignment = await request('/api/assignments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${teacherToken}` },
@@ -78,6 +97,8 @@ async function request(route, options = {}) {
         title: `Timezone ${Date.now()}`,
         subject: 'Mathematiques',
         type: 'interrogation',
+        faculty: 'Sciences informatiques',
+        promotion: 'L2',
         startAt: '2030-09-02T10:00',
         endAt: '2030-09-02T11:00',
         duration: 30,
@@ -98,6 +119,8 @@ async function request(route, options = {}) {
         title: `Evaluation ${Date.now()}`,
         subject: 'Mathematiques',
         type: 'interrogation',
+        faculty: 'Sciences informatiques',
+        promotion: 'L2',
         startAt: new Date(Date.now() - 60000).toISOString(),
         endAt: new Date(Date.now() + 3600000).toISOString(),
         duration: 30,
@@ -108,6 +131,28 @@ async function request(route, options = {}) {
     assert.equal(assignment.response.status, 201);
     const assignmentId = assignment.body.assignment.id;
 
+    const studentDashboard = await request('/api/student/dashboard', { headers: { Authorization: `Bearer ${studentToken}` } });
+    assert.ok(studentDashboard.body.dashboard.assignments.some((item) => item.id === assignmentId));
+    assert.equal(studentDashboard.body.dashboard.assignments.find((item) => item.id === assignmentId).type, 'interrogation');
+    for (const token of [otherPromotionToken, otherFacultyToken]) {
+      const dashboard = await request('/api/student/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+      assert.ok(!dashboard.body.dashboard.assignments.some((item) => item.id === assignmentId));
+      const directAccess = await request(`/api/assignments/${assignmentId}?faculte=Sciences%20informatiques&promotion=L2`, { headers: { Authorization: `Bearer ${token}` } });
+      assert.equal(directAccess.response.status, 403);
+      const forbiddenStart = await request(`/api/assignments/${assignmentId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ faculty: 'Sciences informatiques', promotion: 'L2' })
+      });
+      assert.equal(forbiddenStart.response.status, 403);
+      const forbiddenSubmit = await request(`/api/assignments/${assignmentId}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ answers: [] })
+      });
+      assert.equal(forbiddenSubmit.response.status, 403);
+    }
+
     const upcomingAssignment = await request('/api/assignments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${teacherToken}` },
@@ -115,6 +160,8 @@ async function request(route, options = {}) {
         title: `Upcoming ${Date.now()}`,
         subject: 'Mathematiques',
         type: 'devoir',
+        faculty: 'Sciences informatiques',
+        promotion: 'L2',
         startAt: new Date(Date.now() + 60000).toISOString(),
         endAt: new Date(Date.now() + 3600000).toISOString(),
         duration: 30,
@@ -123,6 +170,32 @@ async function request(route, options = {}) {
       })) })
     });
     assert.equal(upcomingAssignment.response.status, 201);
+    assert.equal(upcomingAssignment.body.assignment.type, 'devoir');
+    const examAssignment = await request('/api/assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${teacherToken}` },
+      body: JSON.stringify({
+        title: `Exam ${Date.now()}`,
+        subject: 'Mathematiques',
+        type: 'examen',
+        faculty: 'Sciences informatiques',
+        promotion: 'L2',
+        startAt: new Date(Date.now() + 60000).toISOString(),
+        endAt: new Date(Date.now() + 3600000).toISOString(),
+        duration: 30,
+        instructions: 'Test examen',
+        questions: [{ id: 1, type: 'qcm', text: 'Question ?', options: ['A', 'B'], correctAnswer: 'A', points: 1 }]
+      })
+    });
+    assert.equal(examAssignment.response.status, 201);
+    assert.equal(examAssignment.body.assignment.type, 'examen');
+    const refreshedDashboard = await request('/api/student/dashboard', { headers: { Authorization: `Bearer ${studentToken}` } });
+    const visibleAssignments = refreshedDashboard.body.dashboard.assignments;
+    assert.ok(visibleAssignments.some((item) => item.id === assignmentId));
+    assert.ok(visibleAssignments.some((item) => item.type === 'devoir'));
+    assert.ok(visibleAssignments.some((item) => item.type === 'examen'));
+    const peerDashboard = await request('/api/student/dashboard', { headers: { Authorization: `Bearer ${peerStudentToken}` } });
+    assert.ok(peerDashboard.body.dashboard.assignments.some((item) => item.id === assignmentId));
     const upcomingStart = await request(`/api/assignments/${upcomingAssignment.body.assignment.id}/start`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${studentToken}` }
@@ -163,6 +236,10 @@ async function request(route, options = {}) {
     assert.equal(submission.response.status, 201);
     assert.equal(submission.body.result.score, 2);
     assert.equal(submission.body.result.percentage, 100);
+    const studentResults = await request('/api/student/results', { headers: { Authorization: `Bearer ${studentToken}` } });
+    assert.equal(studentResults.response.status, 200);
+    assert.equal(studentResults.body.results.length, 1);
+    assert.equal(studentResults.body.results[0].type, 'interrogation');
 
     const secondAttempt = await request(`/api/assignments/${assignmentId}/start`, {
       method: 'POST',
@@ -177,6 +254,8 @@ async function request(route, options = {}) {
         title: `Expiring ${Date.now()}`,
         subject: 'Mathematiques',
         type: 'interrogation',
+        faculty: 'Sciences informatiques',
+        promotion: 'L2',
         startAt: new Date(Date.now() - 1000).toISOString(),
         endAt: new Date(Date.now() + 300).toISOString(),
         duration: 1,
@@ -194,6 +273,8 @@ async function request(route, options = {}) {
       body: JSON.stringify({ answers: [] })
     });
     assert.equal(expiredSubmit.response.status, 403);
+    const expiredDashboard = await request('/api/student/dashboard', { headers: { Authorization: `Bearer ${studentToken}` } });
+    assert.equal(expiredDashboard.body.dashboard.assignments.find((item) => item.id === expiringId).studentStatus, 'expired');
 
     const teacherResults = await request(`/api/teacher/assignments/${assignmentId}/results`, {
       headers: { Authorization: `Bearer ${teacherToken}` }

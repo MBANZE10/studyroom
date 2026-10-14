@@ -271,7 +271,7 @@ function assignmentStatusForStudent(assignment, studentId) {
   if (attempt?.status === 'submitted') return 'submitted';
   if (attempt?.status === 'in_progress') return Date.now() >= new Date(attempt.expiresAt).getTime() ? 'expired' : 'in_progress';
   if (Date.now() < new Date(assignment.startAt).getTime()) return 'upcoming';
-  if (Date.now() > new Date(assignment.endAt).getTime()) return 'ended';
+  if (Date.now() > new Date(assignment.endAt).getTime()) return 'expired';
   return 'available';
 }
 
@@ -308,14 +308,14 @@ function resolveAllowedAcademicValue(value, allowedValues) {
 
 function studentMatchesAssignment(student, assignment) {
   if (!assignment) return false;
-  const requiredFaculty = resolveAllowedAcademicValue(assignment.faculty || assignment.faculte, allowedFaculties) || normalizeAcademicValue(assignment.faculty || assignment.faculte || '');
-  const requiredPromotion = resolveAllowedAcademicValue(assignment.promotion || assignment.promo || '', allowedPromotions) || normalizeAcademicValue(assignment.promotion || assignment.promo || '');
-  const studentFaculty = resolveAllowedAcademicValue(student?.faculte || student?.filiere || '', allowedFaculties) || normalizeAcademicValue(student?.faculte || student?.filiere || '');
-  const studentPromotion = resolveAllowedAcademicValue(student?.promotion || '', allowedPromotions) || normalizeAcademicValue(student?.promotion || '');
+  const requiredFaculty = resolveAllowedAcademicValue(assignment.faculty || assignment.faculte, allowedFaculties);
+  const requiredPromotion = resolveAllowedAcademicValue(assignment.promotion || assignment.promo, allowedPromotions);
+  const studentFaculty = resolveAllowedAcademicValue(student?.faculte || student?.filiere, allowedFaculties);
+  const studentPromotion = resolveAllowedAcademicValue(student?.promotion, allowedPromotions);
 
-  if (requiredFaculty && studentFaculty !== normalizeAcademicValue(requiredFaculty)) return false;
-  if (requiredPromotion && studentPromotion !== normalizeAcademicValue(requiredPromotion)) return false;
-  return true;
+  return Boolean(requiredFaculty && requiredPromotion && studentFaculty && studentPromotion)
+    && normalizeAcademicValue(studentFaculty) === normalizeAcademicValue(requiredFaculty)
+    && normalizeAcademicValue(studentPromotion) === normalizeAcademicValue(requiredPromotion);
 }
 
 function assignmentTypeLabel(type) {
@@ -323,7 +323,7 @@ function assignmentTypeLabel(type) {
 }
 
 function teacherAssignmentTargetedStudents(assignment) {
-  return users.filter((user) => user.role === 'student' && studentMatchesAssignment(user, assignment));
+  return users.filter((user) => user.role === 'student' && isUserActive(user) && studentMatchesAssignment(user, assignment));
 }
 
 function studentAssignment(assignment, studentId) {
@@ -507,8 +507,8 @@ app.get('/api/assignments', authenticate, (req, res) => {
 
 app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) => {
   const { title, subject, type, faculty, promotion, startAt, endAt, duration, instructions, questions } = req.body || {};
-  if (!title || !instructions || !assignmentTypes.has(type) || !startAt || !endAt || !Array.isArray(questions) || !questions.length) {
-    return res.status(400).json({ message: 'Les informations, les dates et les questions de l’évaluation sont obligatoires.' });
+  if (!title || !instructions || !assignmentTypes.has(type) || !faculty || !promotion || !startAt || !endAt || !Array.isArray(questions) || !questions.length) {
+    return res.status(400).json({ message: 'Le titre, le type, la faculté, la promotion, les dates, les instructions et les questions sont obligatoires.' });
   }
 
   if (typeof title !== 'string' || title.trim().length < 3) {
@@ -634,6 +634,10 @@ app.get('/api/assignments/:assignmentId/attempt', authenticate, authorize(['stud
   const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
   const attempt = submissions.find((item) => item.assignmentId === Number(req.params.assignmentId) && item.studentId === req.user.id && item.status === 'in_progress');
   if (!assignment || !attempt) return res.status(404).json({ message: 'Aucune tentative en cours.' });
+  const student = users.find((item) => item.id === req.user.id);
+  if (assignment.status !== 'published' || !student || !studentMatchesAssignment(student, assignment)) {
+    return res.status(403).json({ message: 'Vous n’êtes pas autorisé à accéder à cette tentative.' });
+  }
   const remainingSeconds = Math.max(Math.ceil((new Date(attempt.expiresAt).getTime() - Date.now()) / 1000), 0);
   if (!remainingSeconds) {
     attempt.status = 'expired';
@@ -646,13 +650,17 @@ app.get('/api/assignments/:assignmentId/attempt', authenticate, authorize(['stud
 app.patch('/api/assignments/:assignmentId/attempt', authenticate, authorize(['student']), (req, res) => {
   const attempt = submissions.find((item) => item.assignmentId === Number(req.params.assignmentId) && item.studentId === req.user.id && item.status === 'in_progress');
   if (!attempt) return res.status(404).json({ message: 'Tentative introuvable ou déjà fermée.' });
+  const assignment = assignments.find((item) => item.id === attempt.assignmentId);
+  const student = users.find((item) => item.id === req.user.id);
+  if (!assignment || assignment.status !== 'published' || !student || !studentMatchesAssignment(student, assignment)) {
+    return res.status(403).json({ message: 'Vous n’êtes pas autorisé à modifier cette tentative.' });
+  }
   if (Date.now() > new Date(attempt.expiresAt).getTime()) {
     attempt.status = 'expired';
     saveSubmissions();
     return res.status(403).json({ message: 'Votre temps est écoulé. La tentative est maintenant fermée.' });
   }
   const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
-  const assignment = assignments.find((item) => item.id === attempt.assignmentId);
   const validQuestionIds = new Set(assignment.questions.map((question) => question.id));
   attempt.answers = answers.filter((answer) => validQuestionIds.has(Number(answer.questionId))).map((answer) => ({ questionId: Number(answer.questionId), answer: answer.answer }));
   saveSubmissions();
@@ -662,9 +670,10 @@ app.patch('/api/assignments/:assignmentId/attempt', authenticate, authorize(['st
 app.post('/api/assignments/:assignmentId/submit', authenticate, authorize(['student']), (req, res) => {
   const assignment = assignments.find((item) => item.id === Number(req.params.assignmentId));
   const student = users.find((item) => item.id === req.user.id);
+  if (!assignment || assignment.status !== 'published') return res.status(404).json({ message: 'Évaluation introuvable.' });
+  if (!student || !studentMatchesAssignment(student, assignment)) return res.status(403).json({ message: 'Cette évaluation n’est pas ouverte pour votre compte.' });
   const attempt = submissions.find((item) => item.assignmentId === Number(req.params.assignmentId) && item.studentId === req.user.id && item.status === 'in_progress');
   if (!assignment || !attempt) return res.status(404).json({ message: 'Tentative introuvable ou déjà soumise.' });
-  if (!student || !studentMatchesAssignment(student, assignment)) return res.status(403).json({ message: 'Cette évaluation n’est pas ouverte pour votre compte.' });
   if (Date.now() > new Date(attempt.expiresAt).getTime()) {
     attempt.status = 'expired';
     saveSubmissions();
@@ -697,7 +706,12 @@ app.post('/api/assignments/:assignmentId/submit', authenticate, authorize(['stud
 });
 
 app.get('/api/student/results', authenticate, authorize(['student']), (req, res) => {
-  return res.json({ results: results.filter((item) => item.studentId === req.user.id).map(studentResult) });
+  const student = users.find((item) => item.id === req.user.id);
+  if (!student) return res.status(404).json({ message: 'Étudiant introuvable.' });
+  return res.json({ results: results.filter((item) => {
+    const assignment = assignments.find((candidate) => candidate.id === item.assignmentId);
+    return item.studentId === student.id && assignment && studentMatchesAssignment(student, assignment);
+  }).map(studentResult) });
 });
 
 app.get('/api/teacher/assignments/:assignmentId/results', authenticate, authorize(['teacher', 'admin']), (req, res) => {
