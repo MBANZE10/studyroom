@@ -2,9 +2,21 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'studyroom-local-dev-secret');
 const revokedTokens = new Set();
 const revokedUserIds = new Set();
+
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET environment variable is required in production.');
+}
+
+function hashPassword(password) {
+  return bcrypt.hashSync(String(password || ''), 12);
+}
+
+function isValidPassword(password) {
+  return typeof password === 'string' && password.length >= 8;
+}
 
 function createToken(user) {
   return jwt.sign(
@@ -36,6 +48,9 @@ function generateTemporaryPassword() {
 }
 
 function verifyPassword(password, hash) {
+  if (typeof password !== 'string' || typeof hash !== 'string') {
+    return false;
+  }
   return bcrypt.compareSync(password, hash);
 }
 
@@ -78,6 +93,8 @@ function verifyToken(token) {
 module.exports = {
   createToken,
   generateTemporaryPassword,
+  hashPassword,
+  isValidPassword,
   verifyPassword,
   verifyToken,
   revokeToken,

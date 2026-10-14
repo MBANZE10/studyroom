@@ -290,9 +290,6 @@ async function handleForgotPassword() {
     }
 
     showLoginMessage(`Un mot de passe temporaire a été envoyé à ${email}.`, 'success');
-    if (data.tempPassword) {
-      console.log('Mot de passe temporaire :', data.tempPassword);
-    }
   } catch (error) {
     showLoginMessage('Le serveur est indisponible pour la réinitialisation du mot de passe.', 'error');
   }

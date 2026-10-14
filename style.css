@@ -53,6 +53,12 @@ body {
   background: radial-gradient(circle at top left, rgba(92, 126, 255, 0.12), transparent 22%), linear-gradient(180deg, var(--bg) 0%, var(--bg) 100%);
   color: var(--text);
   line-height: 1.6;
+  min-height: 100vh;
+}
+
+img, svg, video {
+  max-width: 100%;
+  height: auto;
 }
 
 button, input, select, textarea {
@@ -1252,15 +1258,35 @@ html[data-theme="dark"] .hero-panel {
   .hero-points {
     justify-content: flex-start;
   }
+
+  .stats-grid,
+  .dashboard-grid,
+  .process-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 800px) {
   .header {
-    padding: 0 20px;
+    padding: 0 16px;
+    gap: 12px;
+    min-height: 72px;
+    flex-wrap: wrap;
+  }
+
+  .header-brand-wrap,
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .header-actions {
     gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .user-label {
+    max-width: 120px;
   }
 
   .network-status {
@@ -1274,6 +1300,14 @@ html[data-theme="dark"] .hero-panel {
     grid-template-columns: 1fr;
   }
 
+  .home-view,
+  .dashboard-section,
+  .quiz-panel {
+    width: min(100%, calc(100vw - 20px));
+    padding-left: 0;
+    padding-right: 0;
+  }
+
   .hero {
     padding: 2.5rem 0 1.5rem;
   }
@@ -1283,6 +1317,57 @@ html[data-theme="dark"] .hero-panel {
   .page-header-inline {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .login-box,
+  .result-box,
+  .admin-create-box,
+  .panel,
+  .question-card,
+  .hero-panel {
+    width: 100%;
+  }
+
+  .admin-students-table {
+    min-width: 700px;
+  }
+
+  .question-option-row {
+    grid-template-columns: 40px 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 0 12px;
+  }
+
+  .logo {
+    font-size: 1.3rem;
+  }
+
+  .login-button,
+  .logout-button,
+  .main-button,
+  .secondary-button,
+  .ghost-button,
+  .icon-button {
+    min-height: 42px;
+  }
+
+  .hero-actions,
+  .hero-points {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-actions > *,
+  .hero-points li {
+    width: 100%;
+  }
+
+  .student-menu-panel {
+    width: min(92vw, 320px);
   }
 }
 

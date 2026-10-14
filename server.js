@@ -27,7 +27,7 @@ const {
   saveResults,
   sortResultsByStudentName
 } = require('./backend/src/config/db');
-const { createToken, verifyPassword, generateTemporaryPassword, revokeToken, revokeUserTokens } = require('./backend/src/utils/auth');
+const { createToken, verifyPassword, generateTemporaryPassword, revokeToken, revokeUserTokens, hashPassword, isValidPassword } = require('./backend/src/utils/auth');
 const { authenticate, authorize } = require('./backend/src/middleware/authMiddleware');
 
 app.use(cors({
@@ -72,9 +72,9 @@ function createUserRecord(payload) {
 
   const newUser = {
     id: users.length ? Math.max(...users.map((u) => u.id)) + 1 : 1,
-    fullName: payload.fullName,
-    email: payload.email.toLowerCase(),
-    passwordHash: bcrypt.hashSync(payload.password, 10),
+    fullName: String(payload.fullName || '').trim(),
+    email: String(payload.email || '').trim().toLowerCase(),
+    passwordHash: hashPassword(payload.password),
     role: normalizedRole,
     sexe: payload.sexe || 'M',
     matricule: payload.matricule || null,
@@ -94,28 +94,17 @@ function createUserRecord(payload) {
 }
 
 function ensureDefaultAccounts() {
+  if (users.length > 0) {
+    return;
+  }
+
   const defaultAccounts = [
     { fullName: 'MOISE GBEMA', email: 'teacher@studyroom.com', password: 'teacher123', role: 'teacher' },
     { fullName: 'Admin Principal', email: 'admin@studyroom.com', password: 'admin123', role: 'admin' }
   ];
 
   for (const account of defaultAccounts) {
-    const existing = users.find((user) => user.email.toLowerCase() === account.email.toLowerCase());
-
-    if (!existing) {
-      createUserRecord(account);
-      continue;
-    }
-
-    const needsRoleUpdate = existing.role !== account.role;
-    const needsPasswordReset = !verifyPassword(account.password, existing.passwordHash);
-
-    if (needsRoleUpdate || needsPasswordReset) {
-      existing.fullName = account.fullName;
-      existing.role = account.role;
-      existing.passwordHash = bcrypt.hashSync(account.password, 10);
-      saveUsers();
-    }
+    createUserRecord(account);
   }
 }
 
@@ -343,8 +332,12 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ message: 'Nom, postnom, prénom, matricule, sexe, faculté, promotion, email et mot de passe sont requis.' });
   }
 
-  if (finalPassword.length < 4) {
-    return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 4 caractères.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(finalEmail)) {
+    return res.status(400).json({ message: 'L’adresse e-mail est invalide.' });
+  }
+
+  if (!isValidPassword(finalPassword)) {
+    return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 8 caractères.' });
   }
 
   if (users.some((item) => item.email.toLowerCase() === finalEmail.toLowerCase())) {
@@ -373,15 +366,17 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedPassword = String(password || '');
 
-  if (!email || !password) {
+  if (!normalizedEmail || !normalizedPassword) {
     return res.status(400).json({ message: 'Email et mot de passe requis.' });
   }
 
-  const user = users.find((item) => item.email.toLowerCase() === email.toLowerCase());
+  const user = users.find((item) => item.email.toLowerCase() === normalizedEmail);
 
-  if (!user || !isUserActive(user) || !verifyPassword(password, user.passwordHash)) {
+  if (!user || !isUserActive(user) || !verifyPassword(normalizedPassword, user.passwordHash)) {
     return res.status(401).json({ message: 'Identifiants incorrects.' });
   }
 
@@ -409,15 +404,13 @@ app.post('/api/auth/forgot-password', (req, res) => {
   }
 
   const tempPassword = generateTemporaryPassword();
-  user.passwordHash = bcrypt.hashSync(tempPassword, 10);
+  user.passwordHash = hashPassword(tempPassword);
   saveUsers();
 
   const emailMessage = `Bonjour ${user.fullName},\n\nVotre mot de passe temporaire est : ${tempPassword}\n\nVeuillez le changer dès votre prochaine connexion pour sécuriser votre compte.\n\nStudyRoom`;
 
   return res.status(200).json({
-    message: 'Un mot de passe temporaire a été envoyé à votre adresse e-mail.',
-    tempPassword,
-    emailPreview: emailMessage
+    message: 'Si cette adresse e-mail correspond à un compte actif, un mot de passe temporaire a été généré et doit être utilisé pour reconnecter votre compte.'
   });
 });
 
@@ -446,7 +439,11 @@ app.get('/api/profile', authenticate, (req, res) => {
 
 app.get('/api/student/dashboard', authenticate, authorize(['student']), (req, res) => {
   const user = users.find((item) => item.id === req.user.id);
-  const eligibleAssignments = assignments.filter((item) => item.status === 'published' && user && studentMatchesAssignment(user, item));
+  if (!user) {
+    return res.status(404).json({ message: 'Étudiant introuvable.' });
+  }
+
+  const eligibleAssignments = assignments.filter((item) => item.status === 'published' && studentMatchesAssignment(user, item));
 
   res.json({
     user: { fullName: user.fullName, email: user.email, matricule: user.matricule, promotion: user.promotion, faculte: user.faculte || user.filiere, filiere: user.filiere, classe: user.classe, sexe: user.sexe },
@@ -472,8 +469,13 @@ app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) =>
     return res.status(400).json({ message: 'Les informations, les dates et les questions de l’évaluation sont obligatoires.' });
   }
 
+  if (typeof title !== 'string' || title.trim().length < 3) {
+    return res.status(400).json({ message: 'Le titre de l’évaluation est invalide.' });
+  }
+
   const normalizedFaculty = String(faculty || '').trim().toLowerCase();
   const normalizedPromotion = String(promotion || '').trim().toUpperCase();
+  const normalizedInstructions = String(instructions).trim();
 
   const start = parseStudyRoomDate(startAt);
   const end = parseStudyRoomDate(endAt);
@@ -503,7 +505,7 @@ app.post('/api/assignments', authenticate, authorize(['teacher']), (req, res) =>
     id: nextId(assignments),
     title: String(title).trim(),
     subject: String(subject || title).trim(),
-    instructions: String(instructions).trim(),
+    instructions: normalizedInstructions,
     type,
     faculty: normalizedFaculty,
     promotion: normalizedPromotion,

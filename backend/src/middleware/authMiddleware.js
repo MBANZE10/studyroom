@@ -4,11 +4,15 @@ const { users } = require('../config/db');
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ message: 'Token manquant ou invalide.' });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token) {
+    return res.status(401).json({ message: 'Token manquant ou invalide.' });
+  }
+
   const decoded = verifyToken(token);
 
   if (!decoded) {
@@ -20,7 +24,7 @@ function authenticate(req, res, next) {
     return res.status(401).json({ message: 'Compte désactivé ou session invalide.' });
   }
 
-  req.user = decoded;
+  req.user = { ...decoded, role: decoded.role || user.role };
   next();
 }
 
