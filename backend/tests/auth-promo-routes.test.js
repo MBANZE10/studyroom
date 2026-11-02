@@ -153,8 +153,8 @@ async function run() {
   ];
   writeJson('passwordResetTokens.json', seededResetTokens);
 
-  // No SMTP configured: known and unknown addresses have the same response;
-  // no reset secret is logged and the undeliverable record is unusable.
+  // No SMTP configured: report the service configuration issue consistently
+  // without revealing whether the requested account exists or creating a token.
   const noSmtpApp = await startApp({ SMTP_HOST: '', SMTP_PORT: '', SMTP_USER: '', SMTP_PASS: '' });
   const noSmtpBase = `http://127.0.0.1:${noSmtpApp.port}`;
   const allowedOriginHealth = await fetch(`${noSmtpBase}/api/health`, { headers: { Origin: 'https://mbanze10.github.io' } });
@@ -175,14 +175,12 @@ async function run() {
   const unknownRequest = await jsonRequest(noSmtpBase, '/api/auth/forgot-password', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `missing-${suffix}@example.test` })
   });
-  assert.equal(knownRequest.response.status, 200);
+  assert.equal(knownRequest.response.status, 503);
+  assert.equal(unknownRequest.response.status, 503);
   assert.deepEqual(knownRequest.body, unknownRequest.body);
-  const unavailable = readJson('passwordResetTokens.json').find((item) => item.consumedBy === 'delivery-unavailable');
-  assert.ok(unavailable, 'Sans SMTP, le jeton doit être invalidé comme non livrable.');
+  assert.match(knownRequest.body.message, /service d’envoi d’e-mails n’est pas configuré/i);
+  assert.equal(readJson('passwordResetTokens.json').length, seededResetTokens.length, 'Sans SMTP, aucun jeton ne doit être créé.');
   assert.doesNotMatch(noSmtpApp.getOutput(), /[a-f0-9]{64}/i, 'Aucun jeton ne doit apparaître dans les logs sans SMTP.');
-  const unavailableToken = readJson('passwordResetTokens.json').find((item) => item.id === unavailable.id);
-  assert.ok(unavailableToken.usedAt);
-  assert.equal(unavailableToken.consumedBy, 'delivery-unavailable');
   await stopApp();
 
   // Controlled local SMTP sink: this verifies SMTP protocol handoff and email
@@ -212,7 +210,7 @@ async function run() {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `missing-${suffix}@example.test` })
   });
   assert.equal(missingRequest.response.status, 200);
-  assert.deepEqual(missingRequest.body, knownRequest.body);
+  assert.match(missingRequest.body.message, /Si un compte correspond/i);
   assert.equal(smtp.messages.length, 0, 'Une adresse inexistante ne doit déclencher aucun courriel.');
 
   const resetRequest = await jsonRequest(baseUrl, '/api/auth/forgot-password', {

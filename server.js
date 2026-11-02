@@ -575,6 +575,14 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     return res.status(400).json({ message: 'Veuillez saisir une adresse e-mail valide.' });
   }
 
+  const smtpReady = smtpHost !== 'localhost'
+    && (smtpHost !== 'smtp.gmail.com' || smtpCredentialsConfigured);
+  if (!smtpReady) {
+    return res.status(503).json({
+      message: 'Le service d’envoi d’e-mails n’est pas configuré. Veuillez contacter l’administrateur.'
+    });
+  }
+
   const user = users.find((item) => sanitizeEmail(item.email) === normalizedEmail && isUserActive(item));
   const genericResponse = {
     message: 'Si un compte correspond à cette adresse e-mail, un message de récupération sera envoyé.'
@@ -601,24 +609,13 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   const resetLink = buildResetLink(token, req.get('origin'));
 
   try {
-    const smtpReady = smtpHost !== 'localhost'
-      && (smtpHost !== 'smtp.gmail.com' || smtpCredentialsConfigured);
-    if (smtpReady) {
-      await mailTransporter.sendMail({
-        from: process.env.SMTP_FROM || process.env.SMTP_USER,
-        to: user.email,
-        subject: 'Réinitialisation de votre mot de passe StudyRoom',
-        text: `Bonjour ${user.fullName},\n\nPour réinitialiser votre mot de passe, cliquez sur le lien ci-dessous :\n${resetLink}\n\nCe lien est valable 15 minutes.\n\nStudyRoom`,
-        html: `<p>Bonjour ${escapeHtml(user.fullName)},</p><p>Pour réinitialiser votre mot de passe, cliquez sur le lien ci-dessous :</p><p><a href="${resetLink}">Réinitialiser mon mot de passe</a></p><p>Ce lien est valable 15 minutes.</p><p>StudyRoom</p>`
-      });
-    } else {
-      const pending = passwordResetTokens.find((item) => item.userId === user.id && item.tokenHash === hashToken(token) && item.usedAt === null);
-      if (pending) {
-        pending.usedAt = new Date().toISOString();
-        pending.consumedBy = 'delivery-unavailable';
-        savePasswordResetTokens();
-      }
-    }
+    await mailTransporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: user.email,
+      subject: 'Réinitialisation de votre mot de passe StudyRoom',
+      text: `Bonjour ${user.fullName},\n\nPour réinitialiser votre mot de passe, cliquez sur le lien ci-dessous :\n${resetLink}\n\nCe lien est valable 15 minutes.\n\nStudyRoom`,
+      html: `<p>Bonjour ${escapeHtml(user.fullName)},</p><p>Pour réinitialiser votre mot de passe, cliquez sur le lien ci-dessous :</p><p><a href="${resetLink}">Réinitialiser mon mot de passe</a></p><p>Ce lien est valable 15 minutes.</p><p>StudyRoom</p>`
+    });
   } catch (error) {
     const pending = passwordResetTokens.find((item) => item.userId === user.id && item.tokenHash === hashToken(token) && item.usedAt === null);
     if (pending) {
