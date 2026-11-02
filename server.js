@@ -35,11 +35,16 @@ const {
 const { createToken, verifyPassword, generateTemporaryPassword, generateResetToken, hashToken, revokeToken, hashPassword, isValidPassword } = require('./backend/src/utils/auth');
 const { authenticate, authorize } = require('./backend/src/middleware/authMiddleware');
 
+const smtpCredentialsConfigured = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+const smtpHost = process.env.SMTP_HOST || (smtpCredentialsConfigured ? 'smtp.gmail.com' : 'localhost');
+const smtpPort = Number(process.env.SMTP_PORT || (smtpHost === 'smtp.gmail.com' ? 465 : 587));
 const smtpConfig = {
-  host: process.env.SMTP_HOST || 'localhost',
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
-  auth: process.env.SMTP_USER && process.env.SMTP_PASS ? {
+  host: smtpHost,
+  port: smtpPort,
+  secure: process.env.SMTP_SECURE
+    ? String(process.env.SMTP_SECURE).toLowerCase() === 'true'
+    : smtpHost === 'smtp.gmail.com' && smtpPort === 465,
+  auth: smtpCredentialsConfigured ? {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
   } : undefined
@@ -596,7 +601,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   const resetLink = buildResetLink(token, req.get('origin'));
 
   try {
-    const smtpReady = Boolean(process.env.SMTP_HOST);
+    const smtpReady = smtpHost !== 'localhost'
+      && (smtpHost !== 'smtp.gmail.com' || smtpCredentialsConfigured);
     if (smtpReady) {
       await mailTransporter.sendMail({
         from: process.env.SMTP_FROM || process.env.SMTP_USER,
