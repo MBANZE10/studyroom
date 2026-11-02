@@ -4,7 +4,6 @@ const crypto = require('crypto');
 
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'studyroom-local-dev-secret');
 const revokedTokens = new Set();
-const revokedUserIds = new Set();
 
 if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
   throw new Error('JWT_SECRET environment variable is required in production.');
@@ -15,7 +14,7 @@ function hashPassword(password) {
 }
 
 function isValidPassword(password) {
-  return typeof password === 'string' && password.length >= 8;
+  return typeof password === 'string' && password.length >= 8 && password.length <= 128;
 }
 
 function createToken(user) {
@@ -24,7 +23,8 @@ function createToken(user) {
       id: user.id,
       email: user.email,
       role: user.role,
-      jti: crypto.randomUUID()
+      jti: crypto.randomUUID(),
+      tokenVersion: Number(user.tokenVersion) || 0
     },
     JWT_SECRET,
     { expiresIn: '8h' }
@@ -47,6 +47,14 @@ function generateTemporaryPassword() {
   return pass;
 }
 
+function generateResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
 function verifyPassword(password, hash) {
   if (typeof password !== 'string' || typeof hash !== 'string') {
     return false;
@@ -65,13 +73,6 @@ function revokeToken(token) {
   }
 }
 
-function revokeUserTokens(userId) {
-  if (userId === null || userId === undefined) {
-    return;
-  }
-  revokedUserIds.add(Number(userId));
-}
-
 function verifyToken(token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -79,9 +80,6 @@ function verifyToken(token) {
       return null;
     }
     if (decoded.jti && revokedTokens.has(decoded.jti)) {
-      return null;
-    }
-    if (decoded.id !== undefined && revokedUserIds.has(Number(decoded.id))) {
       return null;
     }
     return decoded;
@@ -93,10 +91,11 @@ function verifyToken(token) {
 module.exports = {
   createToken,
   generateTemporaryPassword,
+  generateResetToken,
+  hashToken,
   hashPassword,
   isValidPassword,
   verifyPassword,
   verifyToken,
-  revokeToken,
-  revokeUserTokens
+  revokeToken
 };

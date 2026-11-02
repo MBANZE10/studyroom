@@ -363,6 +363,32 @@
 
         <div class="panel">
           <div class="panel-header">
+            <h3>Gestion des codes promo</h3>
+          </div>
+          <form id="adminPromoForm" class="teacher-form" novalidate>
+            <label>
+              Code promo
+              <input type="text" id="adminPromoCode" maxlength="32" placeholder="CODE2027" required>
+            </label>
+            <label>
+              Libellé
+              <input type="text" id="adminPromoLabel" placeholder="Promotion 2027">
+            </label>
+            <label>
+              Description
+              <textarea id="adminPromoDescription" rows="3" placeholder="Informations sur le code promo"></textarea>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="adminPromoActive" checked>
+              <span>Activer immédiatement</span>
+            </label>
+            <button type="submit" class="main-button small-button">Enregistrer le code</button>
+          </form>
+          <div id="adminPromoList" class="list-stack" style="margin-top: 16px;"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
             <h3>Comptes enregistrés</h3>
           </div>
           <div id="adminUsersList" class="list-stack"></div>
@@ -446,6 +472,17 @@
         <button type="submit" class="main-button">Se connecter</button>
         <button type="button" id="showRegisterBtn" class="ghost-button register-link">Créer un compte</button>
       </form>
+
+      <div id="forgotPasswordPanel" class="forgot-password-panel hidden">
+        <h3>Réinitialisation du mot de passe</h3>
+        <p>Entrez l’adresse e-mail associée à votre compte.</p>
+        <form id="forgotPasswordForm" novalidate>
+          <label for="forgotPasswordEmail">Adresse e-mail</label>
+          <input type="email" id="forgotPasswordEmail" placeholder="exemple@email.com" required>
+          <button type="submit" class="main-button small-button">Envoyer le lien</button>
+          <button type="button" id="backToLoginBtn" class="ghost-button register-link">Retour à la connexion</button>
+        </form>
+      </div>
     </div>
   </div>
 

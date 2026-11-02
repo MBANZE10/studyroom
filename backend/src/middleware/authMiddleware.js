@@ -24,7 +24,11 @@ function authenticate(req, res, next) {
     return res.status(401).json({ message: 'Compte désactivé ou session invalide.' });
   }
 
-  req.user = { ...decoded, role: decoded.role || user.role };
+  if (Number(decoded.tokenVersion || 0) !== Number(user.tokenVersion || 0)) {
+    return res.status(401).json({ message: 'Session invalide ou expirÃ©e.' });
+  }
+
+  req.user = { ...decoded, role: user.role };
   next();
 }
 

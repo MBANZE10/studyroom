@@ -3,7 +3,8 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 
-const dataFiles = ['users.json', 'assignments.json', 'submissions.json', 'notifications.json', 'results.json'].map((file) => path.resolve(__dirname, '../src/data', file));
+const testDataDirectory = process.env.STUDYROOM_DATA_DIR || path.resolve(__dirname, '../src/data');
+const dataFiles = ['users.json', 'assignments.json', 'submissions.json', 'notifications.json', 'results.json'].map((file) => path.resolve(testDataDirectory, file));
 const originalData = dataFiles.map((file) => fs.readFileSync(file, 'utf8'));
 
 const server = spawn(process.execPath, ['server.js'], {

@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1,
+    "code": "CODE2027",
+    "label": "Promotion 2027",
+    "isActive": false,
+    "description": "Code promo préparé en attente d’activation par l’administrateur.",
+    "createdAt": "2025-01-01T00:00:00.000Z",
+    "updatedAt": "2025-01-01T00:00:00.000Z"
+  }
+]

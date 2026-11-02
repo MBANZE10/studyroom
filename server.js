@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const nodemailer = require('nodemailer');
 const XLSX = require('xlsx');
 
 const app = express();
@@ -25,10 +26,47 @@ const {
   saveNotifications,
   results,
   saveResults,
+  promoCodes,
+  savePromoCodes,
+  passwordResetTokens,
+  savePasswordResetTokens,
   sortResultsByStudentName
 } = require('./backend/src/config/db');
-const { createToken, verifyPassword, generateTemporaryPassword, revokeToken, revokeUserTokens, hashPassword, isValidPassword } = require('./backend/src/utils/auth');
+const { createToken, verifyPassword, generateTemporaryPassword, generateResetToken, hashToken, revokeToken, hashPassword, isValidPassword } = require('./backend/src/utils/auth');
 const { authenticate, authorize } = require('./backend/src/middleware/authMiddleware');
+
+const smtpConfig = {
+  host: process.env.SMTP_HOST || 'localhost',
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+  auth: process.env.SMTP_USER && process.env.SMTP_PASS ? {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  } : undefined
+};
+
+const defaultFrontendUrl = process.env.NODE_ENV === 'production'
+  ? 'https://mbanze10.github.io/studyroom'
+  : 'http://localhost:3000';
+const frontendUrl = (process.env.FRONTEND_URL || defaultFrontendUrl).replace(/\/$/, '');
+const mailTransporter = nodemailer.createTransport(smtpConfig);
+
+const defaultPromoCodes = [
+  {
+    id: 1,
+    code: 'CODE2027',
+    label: 'Promotion 2027',
+    isActive: false,
+    description: 'Code promo préparé en attente d’activation par l’administrateur.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+
+if (!promoCodes.length) {
+  promoCodes.push(...defaultPromoCodes);
+  savePromoCodes();
+}
 
 app.use(cors({
   origin(origin, callback) {
@@ -41,7 +79,9 @@ app.use(cors({
   }
 }));
 app.use(express.json());
-app.use(express.static(__dirname));
+for (const publicAsset of ['script.js', 'style.css', 'config.js', 'reset-password.html']) {
+  app.get(`/${publicAsset}`, (req, res) => res.sendFile(path.join(__dirname, publicAsset)));
+}
 
 function serializeUser(user) {
   return {
@@ -177,6 +217,97 @@ function formatStudyRoomDate(value) {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
   }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
   return `${parts.day}/${parts.month}/${parts.year} à ${parts.hour}:${parts.minute}`;
+}
+
+function sanitizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizePromoCode(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function serializePromoCode(item) {
+  return {
+    id: item.id,
+    code: item.code,
+    label: item.label || item.code,
+    isActive: Boolean(item.isActive),
+    description: item.description || '',
+    createdAt: item.createdAt || new Date().toISOString(),
+    updatedAt: item.updatedAt || new Date().toISOString()
+  };
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
+function buildResetLink(token, requestOrigin) {
+  let safeUrl = frontendUrl && /^https?:\/\//.test(frontendUrl) ? frontendUrl : 'http://localhost:3000';
+  if (requestOrigin && allowedOrigins.has(requestOrigin)) {
+    try {
+      if (new URL(requestOrigin).origin !== new URL(safeUrl).origin) safeUrl = requestOrigin;
+    } catch (error) {
+      // Keep the configured frontend URL if an invalid origin somehow reaches this helper.
+    }
+  }
+  return `${safeUrl}/reset-password.html?token=${encodeURIComponent(token)}`;
+}
+
+function createPasswordResetRecord(userId, token) {
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const hashedToken = hashToken(token);
+  const existing = passwordResetTokens.find((item) => item.userId === userId && item.usedAt === null);
+  if (existing) {
+    existing.tokenHash = hashedToken;
+    existing.expiresAt = expiresAt;
+    existing.createdAt = new Date().toISOString();
+    existing.usedAt = null;
+    savePasswordResetTokens();
+    return { ...existing };
+  }
+
+  const record = {
+    id: passwordResetTokens.length ? Math.max(...passwordResetTokens.map((item) => Number(item.id) || 0)) + 1 : 1,
+    userId,
+    tokenHash: hashedToken,
+    createdAt: new Date().toISOString(),
+    expiresAt,
+    usedAt: null,
+    consumedBy: null
+  };
+
+  passwordResetTokens.push(record);
+  savePasswordResetTokens();
+  return record;
+}
+
+function consumeResetToken(userId, token) {
+  const hashedToken = hashToken(token);
+  const now = Date.now();
+  const record = passwordResetTokens.find((item) =>
+    Number(item.userId) === Number(userId) && item.tokenHash === hashedToken && item.usedAt === null
+  );
+
+  if (!record) {
+    return null;
+  }
+
+  const expiresAt = new Date(record.expiresAt).getTime();
+  if (Number.isNaN(expiresAt) || now >= expiresAt) {
+    record.usedAt = new Date().toISOString();
+    record.consumedBy = 'expired';
+    savePasswordResetTokens();
+    return null;
+  }
+
+  record.usedAt = new Date().toISOString();
+  record.consumedBy = 'used';
+  savePasswordResetTokens();
+  return record;
 }
 
 function publicAssignment(assignment) {
@@ -431,28 +562,109 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-app.post('/api/auth/forgot-password', (req, res) => {
-  const { email } = req.body;
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body || {};
+  const normalizedEmail = sanitizeEmail(email);
 
-  if (!email || !String(email).trim()) {
-    return res.status(400).json({ message: 'Veuillez saisir votre adresse e-mail.' });
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return res.status(400).json({ message: 'Veuillez saisir une adresse e-mail valide.' });
   }
 
-  const normalizedEmail = String(email).trim().toLowerCase();
-  const user = users.find((item) => item.email.toLowerCase() === normalizedEmail);
+  const user = users.find((item) => sanitizeEmail(item.email) === normalizedEmail && isUserActive(item));
+  const genericResponse = {
+    message: 'Si un compte correspond à cette adresse e-mail, un message de récupération sera envoyé.'
+  };
 
   if (!user) {
-    return res.status(404).json({ message: 'Aucun compte ne correspond à cette adresse e-mail.' });
+    return res.status(200).json(genericResponse);
   }
 
-  const tempPassword = generateTemporaryPassword();
-  user.passwordHash = hashPassword(tempPassword);
+  const requestKey = `pwreset:${normalizedEmail}`;
+  const now = Date.now();
+  const previousAttempt = global.__studyroomResetRequests || {};
+  const lastRequestedAt = Number(previousAttempt[requestKey] || 0);
+
+  if (!Number.isNaN(lastRequestedAt) && now - lastRequestedAt < 60 * 1000) {
+    return res.status(200).json(genericResponse);
+  }
+
+  previousAttempt[requestKey] = now;
+  global.__studyroomResetRequests = previousAttempt;
+
+  const token = generateResetToken();
+  createPasswordResetRecord(user.id, token);
+  const resetLink = buildResetLink(token, req.get('origin'));
+
+  try {
+    const smtpReady = Boolean(process.env.SMTP_HOST);
+    if (smtpReady) {
+      await mailTransporter.sendMail({
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        to: user.email,
+        subject: 'Réinitialisation de votre mot de passe StudyRoom',
+        text: `Bonjour ${user.fullName},\n\nPour réinitialiser votre mot de passe, cliquez sur le lien ci-dessous :\n${resetLink}\n\nCe lien est valable 15 minutes.\n\nStudyRoom`,
+        html: `<p>Bonjour ${escapeHtml(user.fullName)},</p><p>Pour réinitialiser votre mot de passe, cliquez sur le lien ci-dessous :</p><p><a href="${resetLink}">Réinitialiser mon mot de passe</a></p><p>Ce lien est valable 15 minutes.</p><p>StudyRoom</p>`
+      });
+    } else {
+      const pending = passwordResetTokens.find((item) => item.userId === user.id && item.tokenHash === hashToken(token) && item.usedAt === null);
+      if (pending) {
+        pending.usedAt = new Date().toISOString();
+        pending.consumedBy = 'delivery-unavailable';
+        savePasswordResetTokens();
+      }
+    }
+  } catch (error) {
+    const pending = passwordResetTokens.find((item) => item.userId === user.id && item.tokenHash === hashToken(token) && item.usedAt === null);
+    if (pending) {
+      pending.usedAt = new Date().toISOString();
+      pending.consumedBy = 'delivery-failed';
+      savePasswordResetTokens();
+    }
+    console.error('[StudyRoom] Unable to send password-reset email', error);
+  }
+
+  return res.status(200).json(genericResponse);
+});
+
+app.post('/api/auth/reset-password', (req, res) => {
+  const { token, password } = req.body || {};
+  const normalizedToken = String(token || '').trim();
+  const newPassword = String(password || '');
+
+  if (!normalizedToken || !newPassword) {
+    return res.status(400).json({ message: 'Le jeton et le nouveau mot de passe sont requis.' });
+  }
+
+  if (!isValidPassword(newPassword)) {
+    return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 8 caractères.' });
+  }
+
+  const validRecords = passwordResetTokens.filter((record) => record.usedAt === null && record.expiresAt && new Date(record.expiresAt).getTime() > Date.now());
+  const matchingRecord = validRecords.find((record) => record.tokenHash === hashToken(normalizedToken));
+
+  if (!matchingRecord) {
+    return res.status(400).json({ message: 'Jeton de réinitialisation invalide ou expiré.' });
+  }
+
+  const user = users.find((item) => item.id === Number(matchingRecord.userId) && isUserActive(item));
+  if (!user) {
+    return res.status(400).json({ message: 'Jeton de réinitialisation invalide ou expiré.' });
+  }
+
+  const previousHash = user.passwordHash;
+  const updatedHash = hashPassword(newPassword);
+
+  if (verifyPassword(newPassword, previousHash)) {
+    return res.status(400).json({ message: 'Ce mot de passe est identique au précédent.' });
+  }
+
+  user.passwordHash = updatedHash;
+  user.tokenVersion = (Number(user.tokenVersion) || 0) + 1;
+  consumeResetToken(user.id, normalizedToken);
   saveUsers();
 
-  const emailMessage = `Bonjour ${user.fullName},\n\nVotre mot de passe temporaire est : ${tempPassword}\n\nVeuillez le changer dès votre prochaine connexion pour sécuriser votre compte.\n\nStudyRoom`;
-
   return res.status(200).json({
-    message: 'Si cette adresse e-mail correspond à un compte actif, un mot de passe temporaire a été généré et doit être utilisé pour reconnecter votre compte.'
+    message: 'Votre mot de passe a été réinitialisé avec succès.'
   });
 });
 
@@ -749,6 +961,105 @@ app.get('/api/teacher/dashboard', authenticate, authorize(['teacher']), (req, re
   });
 });
 
+app.get('/api/admin/promo-codes', authenticate, authorize(['admin']), (req, res) => {
+  return res.json({
+    promoCodes: promoCodes.map(serializePromoCode)
+  });
+});
+
+app.post('/api/admin/promo-codes', authenticate, authorize(['admin']), (req, res) => {
+  const { code, label, description, isActive } = req.body || {};
+  const normalizedCode = normalizePromoCode(code);
+
+  if (!/^[A-Z0-9_-]{4,32}$/.test(normalizedCode)) {
+    return res.status(400).json({ message: 'Le code promo doit contenir de 4 à 32 lettres, chiffres, tirets ou tirets bas.' });
+  }
+
+  if (typeof label === 'string' && label.trim().length > 100) return res.status(400).json({ message: 'Le libellé ne peut pas dépasser 100 caractères.' });
+  if (typeof description === 'string' && description.trim().length > 500) return res.status(400).json({ message: 'La description ne peut pas dépasser 500 caractères.' });
+  if (isActive !== undefined && typeof isActive !== 'boolean') return res.status(400).json({ message: 'Le statut actif doit être un booléen.' });
+
+  const existing = promoCodes.find((item) => normalizePromoCode(item.code) === normalizedCode);
+  if (existing) {
+    return res.status(409).json({ message: 'Ce code promo existe déjà.' });
+  }
+
+  const newCode = {
+    id: nextId(promoCodes),
+    code: normalizedCode,
+    label: String(label || normalizedCode).trim() || normalizedCode,
+    description: String(description || '').trim(),
+    isActive: isActive === true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  promoCodes.push(newCode);
+  savePromoCodes();
+
+  return res.status(201).json({
+    message: 'Code promo créé avec succès.',
+    promoCode: serializePromoCode(newCode)
+  });
+});
+
+app.patch('/api/admin/promo-codes/:id', authenticate, authorize(['admin']), (req, res) => {
+  const promoId = Number(req.params.id);
+  const codeEntry = promoCodes.find((item) => Number(item.id) === promoId);
+
+  if (!codeEntry) {
+    return res.status(404).json({ message: 'Code promo introuvable.' });
+  }
+
+  const { code, label, description, isActive } = req.body || {};
+  const normalizedCode = typeof code === 'string' && code.trim() ? normalizePromoCode(code) : null;
+  if (normalizedCode && !/^[A-Z0-9_-]{4,32}$/.test(normalizedCode)) return res.status(400).json({ message: 'Le code promo est invalide.' });
+  if (normalizedCode && promoCodes.some((item) => item !== codeEntry && normalizePromoCode(item.code) === normalizedCode)) return res.status(409).json({ message: 'Ce code promo existe déjà.' });
+  if (typeof label === 'string' && label.trim().length > 100) return res.status(400).json({ message: 'Le libellé ne peut pas dépasser 100 caractères.' });
+  if (typeof description === 'string' && description.trim().length > 500) return res.status(400).json({ message: 'La description ne peut pas dépasser 500 caractères.' });
+  if (isActive !== undefined && typeof isActive !== 'boolean') return res.status(400).json({ message: 'Le statut actif doit être un booléen.' });
+
+  if (normalizedCode) {
+    codeEntry.code = normalizedCode;
+  }
+  if (typeof label === 'string') {
+    codeEntry.label = label.trim() || codeEntry.code;
+  }
+  if (typeof description === 'string') {
+    codeEntry.description = description.trim();
+  }
+  if (typeof isActive === 'boolean') {
+    codeEntry.isActive = isActive;
+  }
+  codeEntry.updatedAt = new Date().toISOString();
+  savePromoCodes();
+
+  return res.json({
+    message: 'Code promo mis à jour.',
+    promoCode: serializePromoCode(codeEntry)
+  });
+});
+
+app.get('/api/student/promo-status', authenticate, authorize(['student']), (req, res) => {
+  const { code } = req.query || {};
+  const normalizedCode = normalizePromoCode(code);
+
+  if (!normalizedCode) {
+    return res.status(400).json({ message: 'Code promo requis.' });
+  }
+
+  const matched = promoCodes.find((item) => normalizePromoCode(item.code) === normalizedCode);
+  if (!matched) {
+    return res.status(404).json({ message: 'Code promo introuvable.' });
+  }
+
+  return res.json({
+    valid: Boolean(matched.isActive),
+    promoCode: serializePromoCode(matched),
+    message: matched.isActive ? 'Code promo actif.' : 'Ce code promo est actuellement désactivé par l’administrateur.'
+  });
+});
+
 app.get('/api/admin/users', authenticate, authorize(['admin']), (req, res) => {
   const activeUsers = users.filter(isUserActive).map(serializeUser);
 
@@ -792,7 +1103,6 @@ app.delete('/api/admin/students/:id', authenticate, authorize(['admin']), (req, 
 
   student.isActive = false;
   student.deletedAt = new Date().toISOString();
-  revokeUserTokens(student.id);
   saveUsers();
 
   return res.json({

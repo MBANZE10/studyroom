@@ -127,6 +127,9 @@ const closeRegisterModal = document.getElementById('closeRegisterModal');
 const closeAdminCreateModal = document.getElementById('closeAdminCreateModal');
 const showRegisterBtn = document.getElementById('showRegisterBtn');
 const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+const forgotPasswordPanel = document.getElementById('forgotPasswordPanel');
+const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+const backToLoginBtn = document.getElementById('backToLoginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const userLabel = document.getElementById('userLabel');
 const homeView = document.getElementById('homeView');
@@ -147,6 +150,8 @@ const exportTeacherResultsBtn = document.getElementById('exportTeacherResultsBtn
 const teacherAssignmentForm = document.getElementById('teacherAssignmentForm');
 const adminCreateUserForm = document.getElementById('adminCreateUserForm');
 const adminUsersList = document.getElementById('adminUsersList');
+const adminPromoForm = document.getElementById('adminPromoForm');
+const adminPromoList = document.getElementById('adminPromoList');
 const adminStudentSearch = document.getElementById('adminStudentSearch');
 const adminStudentsTableBody = document.getElementById('adminStudentsTableBody');
 const adminStudentTotal = document.getElementById('adminStudentTotal');
@@ -174,12 +179,17 @@ const networkStatus = document.getElementById('networkStatus');
 function openLogin() {
   loginModal.style.display = 'flex';
   loginModal.setAttribute('aria-hidden', 'false');
+  toggleForgotPasswordPanel(false);
 }
 
 function closeLogin() {
   loginModal.style.display = 'none';
   loginModal.setAttribute('aria-hidden', 'true');
   loginForm.reset();
+  if (forgotPasswordForm) {
+    forgotPasswordForm.reset();
+  }
+  toggleForgotPasswordPanel(false);
   showLoginMessage('', '');
 }
 
@@ -312,8 +322,126 @@ function setStudentMenuState() {
   }
 }
 
-async function handleForgotPassword() {
-  const email = document.getElementById('email').value.trim();
+async function loadPromoCodes() {
+  if (!adminPromoList) return;
+
+  try {
+    const response = await fetch(`${apiBase}/api/admin/promo-codes`, {
+      headers: { Authorization: `Bearer ${state.token || ''}` }
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      adminPromoList.innerHTML = `<div class="list-item"><p>${escapeHtml(data.message || 'Impossible de charger les codes promo.')}</p></div>`;
+      return;
+    }
+
+    const promoCodes = Array.isArray(data.promoCodes) ? data.promoCodes : [];
+    adminPromoList.innerHTML = promoCodes.length ? promoCodes.map((item) => `
+      <div class="list-item">
+        <h4>${escapeHtml(item.code)}</h4>
+        <p>${escapeHtml(item.label || item.code)}</p>
+        <p>${escapeHtml(item.description || 'Aucune description')}</p>
+        <p>Statut : ${item.isActive ? 'Actif' : 'Désactivé'}</p>
+        <div class="quiz-actions">
+          <button type="button" class="secondary-button toggle-promo-btn" data-promo-id="${item.id}" data-promo-active="${String(item.isActive)}">${item.isActive ? 'Désactiver' : 'Activer'}</button>
+        </div>
+      </div>
+    `).join('') : '<div class="list-item"><p>Aucun code promo enregistré.</p></div>';
+
+    adminPromoList.querySelectorAll('.toggle-promo-btn').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const promoId = Number(button.dataset.promoId);
+        const current = button.dataset.promoActive === 'true';
+        try {
+          const response = await fetch(`${apiBase}/api/admin/promo-codes/${promoId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${state.token || ''}`
+            },
+            body: JSON.stringify({ isActive: !current })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            showLoginMessage(data.message || 'Impossible de modifier le code promo.', 'error');
+            return;
+          }
+          await loadPromoCodes();
+          showLoginMessage('Statut du code promo mis à jour.', 'success');
+        } catch (error) {
+          showLoginMessage('Le serveur est indisponible pour modifier le code promo.', 'error');
+        }
+      });
+    });
+  } catch (error) {
+    adminPromoList.innerHTML = '<div class="list-item"><p>Impossible de charger les codes promo.</p></div>';
+  }
+}
+
+async function handlePromoCodeSubmit(event) {
+  event.preventDefault();
+  if (!adminPromoForm || !state.token) return;
+
+  const code = document.getElementById('adminPromoCode').value.trim();
+  const label = document.getElementById('adminPromoLabel').value.trim();
+  const description = document.getElementById('adminPromoDescription').value.trim();
+  const isActive = document.getElementById('adminPromoActive').checked;
+
+  if (!code) {
+    showLoginMessage('Le code promo est requis.', 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${apiBase}/api/admin/promo-codes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ code, label, description, isActive })
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      showLoginMessage(data.message || 'Impossible d’enregistrer le code promo.', 'error');
+      return;
+    }
+
+    adminPromoForm.reset();
+    document.getElementById('adminPromoActive').checked = true;
+    await loadPromoCodes();
+    showLoginMessage('Code promo enregistré avec succès.', 'success');
+  } catch (error) {
+    showLoginMessage('Le serveur est indisponible pour enregistrer le code promo.', 'error');
+  }
+}
+
+function toggleForgotPasswordPanel(show) {
+  if (!forgotPasswordPanel || !loginForm) return;
+  const shouldShow = Boolean(show);
+  forgotPasswordPanel.classList.toggle('hidden', !shouldShow);
+  loginForm.classList.toggle('hidden', shouldShow);
+
+  if (shouldShow) {
+    const target = document.getElementById('forgotPasswordEmail');
+    if (target) {
+      target.value = (document.getElementById('email')?.value || '').trim();
+      target.focus();
+    }
+  } else {
+    document.getElementById('email')?.focus();
+  }
+}
+
+async function handleForgotPassword(event) {
+  if (event) {
+    event.preventDefault();
+  }
+
+  const emailInput = document.getElementById('forgotPasswordEmail');
+  const email = (emailInput?.value || document.getElementById('email')?.value || '').trim();
 
   if (!email) {
     showLoginMessage('Veuillez entrer votre adresse e-mail pour réinitialiser le mot de passe.', 'error');
@@ -334,7 +462,8 @@ async function handleForgotPassword() {
       return;
     }
 
-    showLoginMessage(`Un mot de passe temporaire a été envoyé à ${email}.`, 'success');
+    toggleForgotPasswordPanel(false);
+    showLoginMessage(data.message || `Un lien de réinitialisation a été envoyé à ${email}.`, 'success');
   } catch (error) {
     showLoginMessage('Le serveur est indisponible pour la réinitialisation du mot de passe.', 'error');
   }
@@ -719,7 +848,7 @@ async function loadTeacherDashboard() {
   });
   const assignmentsData = await assignmentsResponse.json();
   state.teacherAssignments = Array.isArray(assignmentsData.assignments) ? assignmentsData.assignments : [];
-  teacherResultsAssignment.innerHTML = '<option value="">Choisir une évaluation</option>' + state.teacherAssignments.map((item) => `<option value="${item.id}">${item.title} (${item.type})</option>`).join('');
+  teacherResultsAssignment.innerHTML = '<option value="">Choisir une évaluation</option>' + state.teacherAssignments.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)} (${escapeHtml(item.type)})</option>`).join('');
 
   let submittedResults = [];
   try {
@@ -744,8 +873,8 @@ async function loadTeacherDashboard() {
 
   teacherStudents.innerHTML = allStudents.length ? allStudents.map((student) => `
     <div class="list-item">
-      <h4>${student.fullName}</h4>
-      <p>${student.sexe || 'M'} • ${student.email} • ${student.matricule || 'Pas de matricule'}</p>
+      <h4>${escapeHtml(student.fullName)}</h4>
+      <p>${escapeHtml(student.sexe || 'M')} • ${escapeHtml(student.email)} • ${escapeHtml(student.matricule || 'Pas de matricule')}</p>
     </div>
   `).join('') : '<div class="list-item"><p>Aucun étudiant enregistré pour le moment.</p></div>';
 
@@ -759,13 +888,13 @@ async function loadTeacherDashboard() {
   } else {
     teacherAssignments.innerHTML = state.teacherAssignments.map((item) => `
       <div class="list-item">
-        <h4>${item.title}</h4>
-        <p>${item.subject} • ${item.type}</p>
+        <h4>${escapeHtml(item.title)}</h4>
+        <p>${escapeHtml(item.subject)} • ${escapeHtml(item.type)}</p>
         <p>${Array.isArray(item.questions) ? item.questions.length : 0} question(s) • corrigé intégré</p>
         <p>Début : ${formatStudyRoomDate(item.startAt)} • Fin : ${formatStudyRoomDate(item.endAt)}</p>
         <p>Durée : ${item.duration} min</p>
         <div class="quiz-actions">
-          <button type="button" class="secondary-button delete-assignment-btn" data-assignment-id="${item.id}">Supprimer</button>
+          <button type="button" class="secondary-button delete-assignment-btn" data-assignment-id="${escapeHtml(item.id)}">Supprimer</button>
         </div>
       </div>
     `).join('');
@@ -808,9 +937,9 @@ async function loadTeacherDashboard() {
   } else {
     teacherSubmissions.innerHTML = submittedResults.map((result) => `
       <div class="list-item">
-        <h4>${result.fullName}</h4>
-        <p>${result.email} • ${result.examTitle}</p>
-        <p>Note : ${result.score}/${result.maxScore} • ${result.percentage}% • ${result.status}</p>
+        <h4>${escapeHtml(result.fullName)}</h4>
+        <p>${escapeHtml(result.email)} • ${escapeHtml(result.examTitle)}</p>
+        <p>Note : ${escapeHtml(result.score)}/${escapeHtml(result.maxScore)} • ${escapeHtml(result.percentage)}% • ${escapeHtml(result.status)}</p>
       </div>
     `).join('');
   }
@@ -829,8 +958,8 @@ async function loadAdminDashboard() {
     const studentList = data.users.filter((user) => user.role === 'student');
     teacherStudents.innerHTML = studentList.length ? studentList.map((student) => `
       <div class="list-item">
-        <h4>${student.fullName}</h4>
-        <p>${student.sexe || 'M'} • ${student.email} • ${student.matricule || 'Sans matricule'}</p>
+        <h4>${escapeHtml(student.fullName)}</h4>
+        <p>${escapeHtml(student.sexe || 'M')} • ${escapeHtml(student.email)} • ${escapeHtml(student.matricule || 'Sans matricule')}</p>
       </div>
     `).join('') : '<div class="list-item"><p>Aucun étudiant enregistré.</p></div>';
   }
@@ -841,8 +970,8 @@ async function loadAdminDashboard() {
 
   adminUsersList.innerHTML = data.users.map((user) => `
     <div class="list-item">
-      <h4>${user.fullName}</h4>
-      <p>${user.role} • ${user.email}</p>
+      <h4>${escapeHtml(user.fullName)}</h4>
+      <p>${escapeHtml(user.role)} • ${escapeHtml(user.email)}</p>
     </div>
   `).join('');
 
@@ -870,7 +999,7 @@ function renderAdminStudents() {
       <td>${escapeHtml(student.email)}</td>
       <td>${escapeHtml(student.createdAt ? formatStudyRoomDate(student.createdAt) : 'Non disponible')}</td>
       <td>
-        <button type="button" class="danger-button delete-student-btn" data-student-id="${student.id}">Supprimer</button>
+        <button type="button" class="danger-button delete-student-btn" data-student-id="${escapeHtml(student.id)}">Supprimer</button>
       </td>
     </tr>
   `).join('') : `
@@ -1176,7 +1305,7 @@ function renderQuestion() {
     answerMarkup = `
       <label>
         Votre réponse
-        <textarea id="openAnswerBox" rows="6" placeholder="Répondez ici..." ${state.examExpired ? 'disabled' : ''}>${typeof currentAnswer === 'string' ? currentAnswer : ''}</textarea>
+        <textarea id="openAnswerBox" rows="6" placeholder="Répondez ici..." ${state.examExpired ? 'disabled' : ''}>${escapeHtml(typeof currentAnswer === 'string' ? currentAnswer : '')}</textarea>
       </label>
     `;
   } else {
@@ -1185,7 +1314,7 @@ function renderQuestion() {
       <div class="answer-list">
         ${options.map((option, index) => `
           <button type="button" class="answer-option ${String(currentAnswer) === String(index) ? 'selected' : ''}" data-option-index="${index}" ${state.examExpired ? 'disabled' : ''}>
-            ${option}
+            ${escapeHtml(option)}
           </button>
         `).join('')}
       </div>
@@ -1194,7 +1323,7 @@ function renderQuestion() {
 
   questionCard.innerHTML = `
     <p class="question-counter">Question ${state.currentQuestionIndex + 1} / ${exam.questions.length}</p>
-    <h3>${question.text}</h3>
+    <h3>${escapeHtml(question.text)}</h3>
     ${answerMarkup}
   `;
 
@@ -1502,7 +1631,7 @@ async function loadTeacherResults() {
     return;
   }
   teacherResultsList.innerHTML = data.results.length ? data.results.map((result) => `
-    <div class="list-item"><h4>${result.fullName}</h4><p>${result.matricule || 'Sans matricule'} • ${result.sexe || ''} • ${result.faculte || ''} • ${result.promotion || ''}</p><p>${result.email} • Cote : ${result.score}/${result.maxScore} (${result.percentage}%)</p></div>
+    <div class="list-item"><h4>${escapeHtml(result.fullName)}</h4><p>${escapeHtml(result.matricule || 'Sans matricule')} • ${escapeHtml(result.sexe || '')} • ${escapeHtml(result.faculte || '')} • ${escapeHtml(result.promotion || '')}</p><p>${escapeHtml(result.email)} • Cote : ${escapeHtml(result.score)}/${escapeHtml(result.maxScore)} (${escapeHtml(result.percentage)}%)</p></div>
   `).join('') : '<div class="list-item"><p>Aucun résultat pour cette évaluation.</p></div>';
 }
 
@@ -1615,7 +1744,7 @@ function renderQuestionBuilder() {
 
       <label>
         Libellé de la question
-        <textarea class="question-text-input" data-index="${currentIndex}" rows="3" placeholder="Posez ici la question...">${currentQuestion.text}</textarea>
+        <textarea class="question-text-input" data-index="${currentIndex}" rows="3" placeholder="Posez ici la question...">${escapeHtml(currentQuestion.text)}</textarea>
       </label>
 
       ${!isOpen ? `
@@ -1623,7 +1752,7 @@ function renderQuestionBuilder() {
           ${currentQuestion.options.map((option, optionIndex) => `
             <div class="question-option-row">
               <span class="inline-label">${String.fromCharCode(65 + optionIndex)}</span>
-              <input type="text" class="question-option-input" data-question-index="${currentIndex}" data-option-index="${optionIndex}" value="${option}" placeholder="Option ${String.fromCharCode(65 + optionIndex)}">
+              <input type="text" class="question-option-input" data-question-index="${currentIndex}" data-option-index="${optionIndex}" value="${escapeHtml(option)}" placeholder="Option ${String.fromCharCode(65 + optionIndex)}">
               ${currentQuestion.type === 'qcm' ? `<button type="button" class="ghost-button remove-option-btn" data-question-index="${currentIndex}" data-option-index="${optionIndex}" ${currentQuestion.options.length <= 2 ? 'disabled' : ''}>Supprimer</button>` : ''}
             </div>
           `).join('')}
@@ -1646,7 +1775,7 @@ function renderQuestionBuilder() {
 
       <label>
         Bonne réponse
-        <input type="text" class="question-answer-input" data-index="${currentIndex}" value="${currentQuestion.correctAnswer}" placeholder="HTML / Vrai / réponse attendue...">
+        <input type="text" class="question-answer-input" data-index="${currentIndex}" value="${escapeHtml(currentQuestion.correctAnswer)}" placeholder="HTML / Vrai / réponse attendue...">
       </label>
 
       <label>
@@ -1657,7 +1786,7 @@ function renderQuestionBuilder() {
       ${isOpen ? `
         <label>
           Éléments attendus / réponse de référence
-          <textarea class="question-expected-input" data-index="${currentIndex}" rows="4" placeholder="- notion 1\n- notion 2\n- élément attendu...">${currentQuestion.expectedAnswer}</textarea>
+          <textarea class="question-expected-input" data-index="${currentIndex}" rows="4" placeholder="- notion 1\n- notion 2\n- élément attendu...">${escapeHtml(currentQuestion.expectedAnswer)}</textarea>
         </label>
       ` : ''}
     </div>
@@ -1894,35 +2023,91 @@ window.addEventListener('visibilitychange', () => {
   }
 });
 
-document.getElementById('addQuestionBtn').addEventListener('click', addQuestionBuilder);
+const addQuestionBtnEl = document.getElementById('addQuestionBtn');
+if (addQuestionBtnEl) {
+  addQuestionBtnEl.addEventListener('click', addQuestionBuilder);
+}
 document.querySelectorAll('[data-toggle-password]').forEach((button) => {
   button.addEventListener('click', () => togglePasswordVisibility(button));
 });
 if (brandHomeBtn) {
   brandHomeBtn.addEventListener('click', goHome);
 }
-openLoginBtn.addEventListener('click', openLogin);
-accessBtn.addEventListener('click', accessStudyRoom);
-closeLoginModal.addEventListener('click', closeLogin);
-closeRegisterModal.addEventListener('click', closeRegister);
-closeAdminCreateModal.addEventListener('click', closeAdminCreateModalWindow);
-showRegisterBtn.addEventListener('click', openRegister);
-forgotPasswordBtn.addEventListener('click', handleForgotPassword);
-openAdminCreateModalBtn.addEventListener('click', openAdminCreateModal);
-logoutBtn.addEventListener('click', logout);
-loginForm.addEventListener('submit', handleLogin);
-registerForm.addEventListener('submit', handleRegister);
-closeResultBtn.addEventListener('click', goBackToDashboard);
-saveResultBtn.addEventListener('click', saveCurrentExamResult);
-exportResultBtn.addEventListener('click', exportCurrentExamResultToExcel);
-leaveQuizBtn.addEventListener('click', goBackToDashboard);
-prevBtn.addEventListener('click', goToPreviousQuestion);
-nextBtn.addEventListener('click', goToNextQuestion);
-teacherAssignmentForm.addEventListener('submit', handleTeacherAssignment);
-adminCreateUserForm.addEventListener('submit', handleAdminCreateUser);
-adminStudentSearch.addEventListener('input', renderAdminStudents);
-viewTeacherResultsBtn.addEventListener('click', loadTeacherResults);
-exportTeacherResultsBtn.addEventListener('click', exportTeacherResults);
+if (openLoginBtn) {
+  openLoginBtn.addEventListener('click', openLogin);
+}
+if (accessBtn) {
+  accessBtn.addEventListener('click', accessStudyRoom);
+}
+if (closeLoginModal) {
+  closeLoginModal.addEventListener('click', closeLogin);
+}
+if (closeRegisterModal) {
+  closeRegisterModal.addEventListener('click', closeRegister);
+}
+if (closeAdminCreateModal) {
+  closeAdminCreateModal.addEventListener('click', closeAdminCreateModalWindow);
+}
+if (showRegisterBtn) {
+  showRegisterBtn.addEventListener('click', openRegister);
+}
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener('click', () => toggleForgotPasswordPanel(true));
+}
+if (forgotPasswordForm) {
+  forgotPasswordForm.addEventListener('submit', handleForgotPassword);
+}
+if (backToLoginBtn) {
+  backToLoginBtn.addEventListener('click', () => toggleForgotPasswordPanel(false));
+}
+if (openAdminCreateModalBtn) {
+  openAdminCreateModalBtn.addEventListener('click', openAdminCreateModal);
+}
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', logout);
+}
+if (loginForm) {
+  loginForm.addEventListener('submit', handleLogin);
+}
+if (registerForm) {
+  registerForm.addEventListener('submit', handleRegister);
+}
+if (closeResultBtn) {
+  closeResultBtn.addEventListener('click', goBackToDashboard);
+}
+if (saveResultBtn) {
+  saveResultBtn.addEventListener('click', saveCurrentExamResult);
+}
+if (exportResultBtn) {
+  exportResultBtn.addEventListener('click', exportCurrentExamResultToExcel);
+}
+if (leaveQuizBtn) {
+  leaveQuizBtn.addEventListener('click', goBackToDashboard);
+}
+if (prevBtn) {
+  prevBtn.addEventListener('click', goToPreviousQuestion);
+}
+if (nextBtn) {
+  nextBtn.addEventListener('click', goToNextQuestion);
+}
+if (teacherAssignmentForm) {
+  teacherAssignmentForm.addEventListener('submit', handleTeacherAssignment);
+}
+if (adminCreateUserForm) {
+  adminCreateUserForm.addEventListener('submit', handleAdminCreateUser);
+}
+if (adminPromoForm) {
+  adminPromoForm.addEventListener('submit', handlePromoCodeSubmit);
+}
+if (adminStudentSearch) {
+  adminStudentSearch.addEventListener('input', renderAdminStudents);
+}
+if (viewTeacherResultsBtn) {
+  viewTeacherResultsBtn.addEventListener('click', loadTeacherResults);
+}
+if (exportTeacherResultsBtn) {
+  exportTeacherResultsBtn.addEventListener('click', exportTeacherResults);
+}
 
 async function restoreSession() {
   const savedToken = localStorage.getItem('studyroom_token');
@@ -1997,7 +2182,47 @@ function initStudentMenu() {
             <h4>Paramètres</h4>
             <p>La gestion des préférences et de sécurité de votre compte reste accessible depuis ce tableau de bord.</p>
           </div>
+          <div class="list-item">
+            <h4>Code promo étudiant</h4>
+            <p>Activez votre code promo si l’administrateur l’a validé.</p>
+            <div class="teacher-form" style="margin-top: 12px;">
+              <label>
+                Code promo
+                <input type="text" id="studentPromoCodeInput" placeholder="CODE2027" maxlength="32">
+              </label>
+              <button type="button" id="studentPromoCodeCheckBtn" class="secondary-button">Vérifier</button>
+            </div>
+            <p id="studentPromoCodeStatus" style="margin-top: 12px;">Aucun code vérifié pour le moment.</p>
+          </div>
         `;
+
+        const promoInput = document.getElementById('studentPromoCodeInput');
+        const promoStatus = document.getElementById('studentPromoCodeStatus');
+        const promoButton = document.getElementById('studentPromoCodeCheckBtn');
+
+        if (promoButton && promoInput && promoStatus) {
+          promoButton.addEventListener('click', async () => {
+            const code = promoInput.value.trim();
+            if (!code) {
+              promoStatus.textContent = 'Veuillez saisir un code promo.';
+              promoStatus.className = 'login-message error';
+              return;
+            }
+
+            try {
+              const response = await fetch(`${apiBase}/api/student/promo-status?code=${encodeURIComponent(code)}`, {
+                headers: { Authorization: `Bearer ${state.token || ''}` }
+              });
+              const data = await response.json();
+
+              promoStatus.textContent = data.message || 'Statut du code promo indisponible.';
+              promoStatus.className = 'login-message ' + (response.ok && data.valid ? 'success' : 'error');
+            } catch (error) {
+              promoStatus.textContent = 'Impossible de vérifier le code promo pour le moment.';
+              promoStatus.className = 'login-message error';
+            }
+          });
+        }
       }
     });
   });
