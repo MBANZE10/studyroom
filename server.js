@@ -88,6 +88,65 @@ for (const publicAsset of ['script.js', 'style.css', 'config.js', 'reset-passwor
   app.get(`/${publicAsset}`, (req, res) => res.sendFile(path.join(__dirname, publicAsset)));
 }
 
+function defaultUserPreferences() {
+  return {
+    theme: 'light',
+    textSize: 'medium',
+    language: 'fr',
+    notifications: {
+      newAssignments: true,
+      newHomework: true,
+      newExams: true,
+      resultsPublished: true,
+      adminAnnouncements: true,
+      generalNotifications: true
+    },
+    accessibility: {
+      reducedMotion: false,
+      highContrast: false,
+      textSize: 'medium'
+    },
+    communication: {
+      emailUpdates: true
+    },
+    navigation: {
+      compactView: false
+    }
+  };
+}
+
+function normalizeUserPreferences(value) {
+  const safeSource = value && typeof value === 'object' ? value : {};
+  const defaultPreferences = defaultUserPreferences();
+
+  const notifications = {
+    newAssignments: Boolean(safeSource.notifications?.newAssignments ?? defaultPreferences.notifications.newAssignments),
+    newHomework: Boolean(safeSource.notifications?.newHomework ?? defaultPreferences.notifications.newHomework),
+    newExams: Boolean(safeSource.notifications?.newExams ?? defaultPreferences.notifications.newExams),
+    resultsPublished: Boolean(safeSource.notifications?.resultsPublished ?? defaultPreferences.notifications.resultsPublished),
+    adminAnnouncements: Boolean(safeSource.notifications?.adminAnnouncements ?? defaultPreferences.notifications.adminAnnouncements),
+    generalNotifications: Boolean(safeSource.notifications?.generalNotifications ?? defaultPreferences.notifications.generalNotifications)
+  };
+
+  return {
+    theme: safeSource.theme === 'dark' ? 'dark' : 'light',
+    textSize: ['small', 'medium', 'large'].includes(safeSource.textSize) ? safeSource.textSize : defaultPreferences.textSize,
+    language: typeof safeSource.language === 'string' && safeSource.language.trim() ? safeSource.language.trim().slice(0, 2).toLowerCase() : defaultPreferences.language,
+    notifications,
+    accessibility: {
+      reducedMotion: Boolean(safeSource.accessibility?.reducedMotion ?? defaultPreferences.accessibility.reducedMotion),
+      highContrast: Boolean(safeSource.accessibility?.highContrast ?? defaultPreferences.accessibility.highContrast),
+      textSize: ['small', 'medium', 'large'].includes(safeSource.accessibility?.textSize) ? safeSource.accessibility.textSize : defaultPreferences.accessibility.textSize
+    },
+    communication: {
+      emailUpdates: Boolean(safeSource.communication?.emailUpdates ?? defaultPreferences.communication.emailUpdates)
+    },
+    navigation: {
+      compactView: Boolean(safeSource.navigation?.compactView ?? defaultPreferences.navigation.compactView)
+    }
+  };
+}
+
 function serializeUser(user) {
   return {
     id: user.id,
@@ -102,8 +161,11 @@ function serializeUser(user) {
     classe: user.classe || null,
     specialite: user.specialite || null,
     createdAt: user.createdAt || null,
+    lastLoginAt: user.lastLoginAt || null,
+    lastActivityAt: user.lastActivityAt || user.lastLoginAt || null,
     isActive: user.isActive !== false,
-    deletedAt: user.deletedAt || null
+    deletedAt: user.deletedAt || null,
+    preferences: normalizeUserPreferences(user.preferences)
   };
 }
 
@@ -129,8 +191,11 @@ function createUserRecord(payload) {
     classe: payload.classe || null,
     specialite: payload.specialite || null,
     createdAt: new Date().toISOString(),
+    lastLoginAt: null,
+    lastActivityAt: null,
     isActive: true,
-    deletedAt: null
+    deletedAt: null,
+    preferences: defaultUserPreferences()
   };
 
   users.push(newUser);
@@ -558,6 +623,10 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ message: 'Identifiants incorrects.' });
   }
 
+  user.lastLoginAt = new Date().toISOString();
+  user.lastActivityAt = user.lastLoginAt;
+  saveUsers();
+
   const token = createToken(user);
 
   res.json({
@@ -684,6 +753,44 @@ app.post('/api/auth/logout', authenticate, (req, res) => {
   });
 });
 
+app.post('/api/auth/change-password', authenticate, (req, res) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body || {};
+  const user = users.find((item) => item.id === req.user.id);
+
+  if (!user) {
+    return res.status(404).json({ message: 'Utilisateur introuvable.' });
+  }
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return res.status(400).json({ message: 'L’ancien mot de passe, le nouveau mot de passe et sa confirmation sont requis.' });
+  }
+
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({ message: 'La confirmation du nouveau mot de passe ne correspond pas.' });
+  }
+
+  if (!verifyPassword(currentPassword, user.passwordHash)) {
+    return res.status(401).json({ message: 'L’ancien mot de passe est incorrect.' });
+  }
+
+  if (!isValidPassword(newPassword)) {
+    return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 8 caractères.' });
+  }
+
+  if (verifyPassword(newPassword, user.passwordHash)) {
+    return res.status(400).json({ message: 'Le nouveau mot de passe doit être différent de l’ancien.' });
+  }
+
+  user.passwordHash = hashPassword(newPassword);
+  user.tokenVersion = (Number(user.tokenVersion) || 0) + 1;
+  user.lastActivityAt = new Date().toISOString();
+  saveUsers();
+
+  return res.status(200).json({
+    message: 'Votre mot de passe a été modifié avec succès.'
+  });
+});
+
 app.get('/api/profile', authenticate, (req, res) => {
   const user = users.find((item) => item.id === req.user.id);
 
@@ -691,7 +798,49 @@ app.get('/api/profile', authenticate, (req, res) => {
     return res.status(404).json({ message: 'Utilisateur introuvable.' });
   }
 
-  res.json(serializeUser(user));
+  const profile = serializeUser(user);
+  return res.json({
+    user: profile,
+    preferences: profile.preferences,
+    lastActivityAt: user.lastActivityAt || user.lastLoginAt || null
+  });
+});
+
+app.get('/api/profile/preferences', authenticate, (req, res) => {
+  const user = users.find((item) => item.id === req.user.id);
+  if (!user) {
+    return res.status(404).json({ message: 'Utilisateur introuvable.' });
+  }
+
+  const preferences = normalizeUserPreferences(user.preferences);
+  return res.json({ preferences });
+});
+
+app.post('/api/profile/preferences', authenticate, (req, res) => {
+  const user = users.find((item) => item.id === req.user.id);
+  if (!user) {
+    return res.status(404).json({ message: 'Utilisateur introuvable.' });
+  }
+
+  const incoming = req.body || {};
+  const mergedPreferences = normalizeUserPreferences({
+    ...user.preferences,
+    ...incoming,
+    notifications: { ...(user.preferences?.notifications || {}), ...(incoming.notifications || {}) },
+    accessibility: { ...(user.preferences?.accessibility || {}), ...(incoming.accessibility || {}) },
+    communication: { ...(user.preferences?.communication || {}), ...(incoming.communication || {}) },
+    navigation: { ...(user.preferences?.navigation || {}), ...(incoming.navigation || {}) }
+  });
+
+  user.preferences = mergedPreferences;
+  user.lastActivityAt = new Date().toISOString();
+  saveUsers();
+
+  return res.json({
+    message: 'Préférences mises à jour.',
+    preferences: mergedPreferences,
+    user: serializeUser(user)
+  });
 });
 
 app.get('/api/student/dashboard', authenticate, authorize(['student']), (req, res) => {

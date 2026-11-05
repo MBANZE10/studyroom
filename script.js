@@ -107,7 +107,8 @@ const state = {
   examLocked: false,
   serverTimeOffsetMs: 0,
   teacherAssignments: [],
-  teacherResults: []
+  teacherResults: [],
+  settingsSection: 'profile'
 };
 
 const loginModal = document.getElementById('loginModal');
@@ -466,6 +467,373 @@ async function handleForgotPassword(event) {
     showLoginMessage(data.message || `Un lien de réinitialisation a été envoyé à ${email}.`, 'success');
   } catch (error) {
     showLoginMessage('Le serveur est indisponible pour la réinitialisation du mot de passe.', 'error');
+  }
+}
+
+function showSettingsMessage(value, type = '') {
+  const messageBox = document.querySelector('#settingsMessage');
+  if (!messageBox) return;
+  messageBox.textContent = value || '';
+  messageBox.className = 'login-message';
+  if (type) {
+    messageBox.classList.add(type);
+  }
+}
+
+function renderSettingsPanel() {
+  const user = state.user || {};
+  const preferences = user.preferences || {};
+  const sections = [
+    { id: 'profile', label: 'Mon profil' },
+    { id: 'security', label: 'Sécurité' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'appearance', label: 'Apparence' },
+    { id: 'academics', label: 'Académique' },
+    { id: 'promo', label: 'Code promo' },
+    { id: 'privacy', label: 'Confidentialité' },
+    { id: 'help', label: 'Aide' },
+    { id: 'about', label: 'À propos' },
+    { id: 'extras', label: 'Préférences' }
+  ];
+  const currentSection = sections.some((item) => item.id === state.settingsSection) ? state.settingsSection : 'profile';
+  const profileFields = [
+    ['Nom', user.fullName || 'Non renseigné'],
+    ['Postnom / prénom', [user.nom, user.postnom, user.prenom].filter(Boolean).join(' ') || 'Non renseigné'],
+    ['Adresse e-mail', user.email || 'Non renseignée'],
+    ['Matricule', user.matricule || 'Non renseigné'],
+    ['Sexe', user.sexe || 'Non renseigné'],
+    ['Faculté', user.faculte || user.filiere || 'Non renseignée'],
+    ['Filière', user.filiere || 'Non renseignée'],
+    ['Promotion', user.promotion || 'Non renseignée'],
+    ['Date d’inscription', user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Non disponible'],
+    ['Statut du compte', user.isActive === false ? 'Désactivé' : 'Actif']
+  ];
+
+  const sectionMap = {
+    profile: `
+      <div class="settings-section-card">
+        <h3>Mon profil</h3>
+        <div class="settings-grid">
+          ${profileFields.map(([label, value]) => `
+            <div class="settings-item">
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(value)}</strong>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `,
+    security: `
+      <div class="settings-section-card">
+        <h3>Sécurité du compte</h3>
+        <div id="settingsMessage" class="login-message" role="alert"></div>
+        <form id="changePasswordForm" class="teacher-form">
+          <label>Ancien mot de passe
+            <div class="field-with-toggle">
+              <input type="password" id="currentPassword" placeholder="Ancien mot de passe" required>
+              <button type="button" class="password-toggle" data-toggle-password="currentPassword" aria-label="Afficher le mot de passe">Afficher</button>
+            </div>
+          </label>
+          <label>Nouveau mot de passe
+            <div class="field-with-toggle">
+              <input type="password" id="newPassword" placeholder="Nouveau mot de passe" required>
+              <button type="button" class="password-toggle" data-toggle-password="newPassword" aria-label="Afficher le mot de passe">Afficher</button>
+            </div>
+          </label>
+          <label>Confirmation du nouveau mot de passe
+            <div class="field-with-toggle">
+              <input type="password" id="confirmPassword" placeholder="Confirmation" required>
+              <button type="button" class="password-toggle" data-toggle-password="confirmPassword" aria-label="Afficher le mot de passe">Afficher</button>
+            </div>
+          </label>
+          <button type="submit" class="main-button">Modifier mon mot de passe</button>
+        </form>
+        <div class="settings-note">
+          <p>Dernière activité : ${escapeHtml(user.lastActivityAt ? new Date(user.lastActivityAt).toLocaleString('fr-FR') : 'Aucune activité enregistrée.')}</p>
+          <p>Les sessions existantes sont invalidées dès qu’un mot de passe est modifié pour renforcer la sécurité.</p>
+        </div>
+      </div>
+    `,
+    notifications: `
+      <div class="settings-section-card">
+        <h3>Notifications</h3>
+        <form id="notificationPreferencesForm" class="teacher-form">
+          ${[
+            ['newAssignments', 'Nouvelles interrogations'],
+            ['newHomework', 'Nouveaux devoirs'],
+            ['newExams', 'Nouveaux examens'],
+            ['resultsPublished', 'Publication des résultats'],
+            ['adminAnnouncements', 'Annonces administratives'],
+            ['generalNotifications', 'Notifications générales']
+          ].map(([key, label]) => `
+            <label class="checkbox-row">
+              <input type="checkbox" name="${key}" ${Boolean(preferences.notifications?.[key]) ? 'checked' : ''}>
+              <span>${escapeHtml(label)}</span>
+            </label>
+          `).join('')}
+          <button type="submit" class="main-button">Enregistrer les préférences</button>
+        </form>
+      </div>
+    `,
+    appearance: `
+      <div class="settings-section-card">
+        <h3>Apparence et accessibilité</h3>
+        <form id="appearancePreferencesForm" class="teacher-form">
+          <label>Thème
+            <select name="theme">
+              <option value="light" ${preferences.theme === 'light' ? 'selected' : ''}>Clair</option>
+              <option value="dark" ${preferences.theme === 'dark' ? 'selected' : ''}>Sombre</option>
+            </select>
+          </label>
+          <label>Taille du texte
+            <select name="textSize">
+              <option value="small" ${preferences.textSize === 'small' ? 'selected' : ''}>Petite</option>
+              <option value="medium" ${preferences.textSize === 'medium' || !preferences.textSize ? 'selected' : ''}>Moyenne</option>
+              <option value="large" ${preferences.textSize === 'large' ? 'selected' : ''}>Grande</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="reducedMotion" ${Boolean(preferences.accessibility?.reducedMotion) ? 'checked' : ''}>
+            <span>Réduire les animations</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="highContrast" ${Boolean(preferences.accessibility?.highContrast) ? 'checked' : ''}>
+            <span>Contraste élevé</span>
+          </label>
+          <button type="submit" class="main-button">Sauvegarder l’apparence</button>
+        </form>
+      </div>
+    `,
+    academics: `
+      <div class="settings-section-card">
+        <h3>Informations académiques</h3>
+        <div class="settings-grid">
+          <div class="settings-item"><span>Faculté</span><strong>${escapeHtml(user.faculte || user.filiere || 'Non renseignée')}</strong></div>
+          <div class="settings-item"><span>Promotion</span><strong>${escapeHtml(user.promotion || 'Non renseignée')}</strong></div>
+          <div class="settings-item"><span>Filière</span><strong>${escapeHtml(user.filiere || 'Non renseignée')}</strong></div>
+          <div class="settings-item"><span>Matricule</span><strong>${escapeHtml(user.matricule || 'Non renseigné')}</strong></div>
+          <div class="settings-item"><span>Informations d’inscription</span><strong>${escapeHtml(user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Non disponible')}</strong></div>
+        </div>
+        <p class="settings-note">Les changements de promotion restent soumis aux règles administratives en vigueur. Aucune modification libre par l’étudiant n’est autorisée.</p>
+      </div>
+    `,
+    promo: `
+      <div class="settings-section-card">
+        <h3>Code promotionnel</h3>
+        <div class="teacher-form">
+          <label>
+            Saisir un code
+            <input type="text" id="studentPromoCodeInput" placeholder="CODE2027" maxlength="32">
+          </label>
+          <button id="studentPromoCodeCheckBtn" type="button" class="secondary-button">Vérifier</button>
+          <p id="studentPromoCodeStatus" class="settings-note">Aucun code vérifié pour le moment.</p>
+        </div>
+      </div>
+    `,
+    privacy: `
+      <div class="settings-section-card">
+        <h3>Confidentialité et protection des données</h3>
+        <ul class="settings-list">
+          <li>Les informations enregistrées sur votre compte servent à la gestion de l’accès, des évaluations et du suivi académique.</li>
+          <li>Les enseignants et administrateurs ne peuvent consulter que les données autorisées selon leurs rôles.</li>
+          <li>Votre compte est protégé par le système d’authentification et les contrôles de session existants.</li>
+          <li>Pour toute demande ou signalement, contactez l’administration de la plateforme via les coordonnées disponibles dans l’aide.</li>
+        </ul>
+      </div>
+    `,
+    help: `
+      <div class="settings-section-card">
+        <h3>Aide et assistance</h3>
+        <ul class="settings-list">
+          <li>Guide d’utilisation : utilisez le tableau de bord et les menus pour accéder à vos devoirs, enquêtes et résultats.</li>
+          <li>Questions fréquentes : vérifiez la validité du code promo, la date des évaluations et votre accès selon faculté/promotion.</li>
+          <li>Problèmes de connexion : vérifiez votre e-mail et mot de passe, puis réessayez ou utilisez le lien de réinitialisation.</li>
+          <li>Problèmes de mot de passe : utilisez le formulaire de réinitialisation depuis la page d’accueil.</li>
+          <li>Contact administration : contact@studyroom.example (coordonnées de contact disponibles dans l’interface de la plateforme).</li>
+        </ul>
+      </div>
+    `,
+    about: `
+      <div class="settings-section-card">
+        <h3>À propos de StudyRoom</h3>
+        <p>StudyRoom est une plateforme académique dédiée à la gestion des devoirs, interrogations, examens et résultats.</p>
+        <ul class="settings-list">
+          <li>Version : ${escapeHtml((window.STUDYROOM_CONFIG && window.STUDYROOM_CONFIG.version) || '1.0.0')}</li>
+          <li>API : ${escapeHtml(apiBase || 'local')}</li>
+          <li>Fuseau horaire : ${escapeHtml(studyRoomTimeZone)}</li>
+        </ul>
+      </div>
+    `,
+    extras: `
+      <div class="settings-section-card">
+        <h3>Préférences supplémentaires</h3>
+        <form id="extraPreferencesForm" class="teacher-form">
+          <label>Langue de l’interface
+            <select name="language">
+              <option value="fr" ${preferences.language === 'fr' ? 'selected' : ''}>Français</option>
+              <option value="en" ${preferences.language === 'en' ? 'selected' : ''}>English</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="compactView" ${Boolean(preferences.navigation?.compactView) ? 'checked' : ''}>
+            <span>Vue compacte</span>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="emailUpdates" ${Boolean(preferences.communication?.emailUpdates) ? 'checked' : ''}>
+            <span>Recevoir les mises à jour par e-mail</span>
+          </label>
+          <button type="submit" class="main-button">Sauvegarder</button>
+        </form>
+      </div>
+    `
+  };
+
+  studentSubmissions.innerHTML = `
+    <div class="settings-shell">
+      <div class="settings-toolbar">
+        <button type="button" class="secondary-button" id="settingsBackBtn">Retour</button>
+        <h3>Paramètres</h3>
+      </div>
+      <div class="settings-layout">
+        <aside class="settings-nav">
+          ${sections.map((item) => `
+            <button type="button" class="settings-section-btn ${item.id === currentSection ? 'active' : ''}" data-settings-section="${item.id}">${escapeHtml(item.label)}</button>
+          `).join('')}
+        </aside>
+        <div class="settings-content">${sectionMap[currentSection] || sectionMap.profile}</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('settingsBackBtn')?.addEventListener('click', () => {
+    showOnly('student');
+    studentDashboard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  studentSubmissions.querySelectorAll('[data-settings-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.settingsSection = button.dataset.settingsSection;
+      renderSettingsPanel();
+    });
+  });
+
+  const passwordForm = document.getElementById('changePasswordForm');
+  passwordForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const payload = {
+      currentPassword: document.getElementById('currentPassword').value,
+      newPassword: document.getElementById('newPassword').value,
+      confirmPassword: document.getElementById('confirmPassword').value
+    };
+
+    const response = await fetch(`${apiBase}/api/auth/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token || ''}` },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    showSettingsMessage(data.message || 'La modification a échoué.', response.ok ? 'success' : 'error');
+    if (response.ok) {
+      passwordForm.reset();
+    }
+  });
+
+  const notificationForm = document.getElementById('notificationPreferencesForm');
+  notificationForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(notificationForm);
+    const payload = {
+      notifications: {
+        newAssignments: formData.get('newAssignments') === 'on',
+        newHomework: formData.get('newHomework') === 'on',
+        newExams: formData.get('newExams') === 'on',
+        resultsPublished: formData.get('resultsPublished') === 'on',
+        adminAnnouncements: formData.get('adminAnnouncements') === 'on',
+        generalNotifications: formData.get('generalNotifications') === 'on'
+      }
+    };
+    await saveUserSettings(payload);
+  });
+
+  const appearanceForm = document.getElementById('appearancePreferencesForm');
+  appearanceForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(appearanceForm);
+    const payload = {
+      theme: formData.get('theme') || 'light',
+      textSize: formData.get('textSize') || 'medium',
+      accessibility: {
+        reducedMotion: formData.get('reducedMotion') === 'on',
+        highContrast: formData.get('highContrast') === 'on',
+        textSize: formData.get('textSize') || 'medium'
+      }
+    };
+    const response = await saveUserSettings(payload);
+    if (response?.ok && payload.theme) {
+      applyTheme(payload.theme);
+    }
+  });
+
+  const extraForm = document.getElementById('extraPreferencesForm');
+  extraForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(extraForm);
+    const payload = {
+      language: formData.get('language') || 'fr',
+      navigation: { compactView: formData.get('compactView') === 'on' },
+      communication: { emailUpdates: formData.get('emailUpdates') === 'on' }
+    };
+    await saveUserSettings(payload);
+  });
+
+  const promoInput = document.getElementById('studentPromoCodeInput');
+  const promoStatus = document.getElementById('studentPromoCodeStatus');
+  const promoButton = document.getElementById('studentPromoCodeCheckBtn');
+  promoButton?.addEventListener('click', async () => {
+    const code = (promoInput?.value || '').trim();
+    if (!code) {
+      promoStatus.textContent = 'Veuillez saisir un code promo.';
+      promoStatus.className = 'login-message error';
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBase}/api/student/promo-status?code=${encodeURIComponent(code)}`, {
+        headers: { Authorization: `Bearer ${state.token || ''}` }
+      });
+      const data = await response.json();
+      promoStatus.textContent = data.message || 'Statut du code promo indisponible.';
+      promoStatus.className = 'login-message ' + (response.ok && data.valid ? 'success' : 'error');
+    } catch (error) {
+      promoStatus.textContent = 'Impossible de vérifier le code promo pour le moment.';
+      promoStatus.className = 'login-message error';
+    }
+  });
+}
+
+async function saveUserSettings(payload) {
+  try {
+    const response = await fetch(`${apiBase}/api/profile/preferences`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.token || ''}` },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      showSettingsMessage(data.message || 'Impossible de sauvegarder les préférences.', 'error');
+      return { ok: false, data };
+    }
+    state.user = data.user || state.user;
+    state.user.preferences = data.preferences || state.user.preferences;
+    showSettingsMessage(data.message || 'Préférences enregistrées.', 'success');
+    if (state.user.preferences?.theme) {
+      applyTheme(state.user.preferences.theme);
+    }
+    renderSettingsPanel();
+    return { ok: true, data };
+  } catch (error) {
+    showSettingsMessage('Le serveur est indisponible pour enregistrer les préférences.', 'error');
+    return { ok: false, error };
   }
 }
 
@@ -2027,8 +2395,11 @@ const addQuestionBtnEl = document.getElementById('addQuestionBtn');
 if (addQuestionBtnEl) {
   addQuestionBtnEl.addEventListener('click', addQuestionBuilder);
 }
-document.querySelectorAll('[data-toggle-password]').forEach((button) => {
-  button.addEventListener('click', () => togglePasswordVisibility(button));
+document.addEventListener('click', (event) => {
+  const toggleButton = event.target.closest('.password-toggle');
+  if (toggleButton) {
+    togglePasswordVisibility(toggleButton);
+  }
 });
 if (brandHomeBtn) {
   brandHomeBtn.addEventListener('click', goHome);
@@ -2177,52 +2548,8 @@ function initStudentMenu() {
       }
 
       if (target === 'parametres') {
-        studentSubmissions.innerHTML = `
-          <div class="list-item">
-            <h4>Paramètres</h4>
-            <p>La gestion des préférences et de sécurité de votre compte reste accessible depuis ce tableau de bord.</p>
-          </div>
-          <div class="list-item">
-            <h4>Code promo étudiant</h4>
-            <p>Activez votre code promo si l’administrateur l’a validé.</p>
-            <div class="teacher-form" style="margin-top: 12px;">
-              <label>
-                Code promo
-                <input type="text" id="studentPromoCodeInput" placeholder="CODE2027" maxlength="32">
-              </label>
-              <button type="button" id="studentPromoCodeCheckBtn" class="secondary-button">Vérifier</button>
-            </div>
-            <p id="studentPromoCodeStatus" style="margin-top: 12px;">Aucun code vérifié pour le moment.</p>
-          </div>
-        `;
-
-        const promoInput = document.getElementById('studentPromoCodeInput');
-        const promoStatus = document.getElementById('studentPromoCodeStatus');
-        const promoButton = document.getElementById('studentPromoCodeCheckBtn');
-
-        if (promoButton && promoInput && promoStatus) {
-          promoButton.addEventListener('click', async () => {
-            const code = promoInput.value.trim();
-            if (!code) {
-              promoStatus.textContent = 'Veuillez saisir un code promo.';
-              promoStatus.className = 'login-message error';
-              return;
-            }
-
-            try {
-              const response = await fetch(`${apiBase}/api/student/promo-status?code=${encodeURIComponent(code)}`, {
-                headers: { Authorization: `Bearer ${state.token || ''}` }
-              });
-              const data = await response.json();
-
-              promoStatus.textContent = data.message || 'Statut du code promo indisponible.';
-              promoStatus.className = 'login-message ' + (response.ok && data.valid ? 'success' : 'error');
-            } catch (error) {
-              promoStatus.textContent = 'Impossible de vérifier le code promo pour le moment.';
-              promoStatus.className = 'login-message error';
-            }
-          });
-        }
+        state.settingsSection = 'profile';
+        renderSettingsPanel();
       }
     });
   });
